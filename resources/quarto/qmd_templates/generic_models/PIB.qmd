@@ -1,0 +1,33 @@
+---
+title: "PIB"
+author: "ThreeME team"
+format: 
+  html:
+    self-contained: false 
+params:
+  project_name: "frelance"
+  colour: "blue"
+  scenario: !expr c("baseline","ct1")  # List of scenarii to be plotted
+---
+
+
+```{r}
+library(tidyverse)
+
+project_name <- params$project_name
+scenarios <- c(params$scenario) |> unique()
+couleur_ligne <- params$colour
+
+data_full <- readRDS(file.path("data","output",paste0(project_name,".rds")))
+```
+
+
+```{r}
+
+plot_PIB <- data_full |> filter(variable == "GDP", scenario %in% scenarios) |> 
+  ggplot(aes(x = year, y = values)) +
+  geom_line(aes(linetype = scenario), colour = couleur_ligne)
+
+plot_PIB
+```
+

@@ -1,0 +1,1641 @@
+---
+title: "ThreeME results of economics"
+author: "ThreeME team"
+date: "`r format(Sys.Date(), '%d %B %y')`"
+format: 
+ revealjs:
+  center: true
+  navigation-mode: linear
+  theme: [simple, www/presentation.scss]
+  width: 1300
+  height: 800
+  fig-height: 4.9
+  fig-width: 6.5
+subtitle: 'Scenario: `r params$scenario_to_analyse`'
+params:
+  startyear: 2020
+  endyear: 2050
+  shockyear: 2020
+  project_name: "ademe_2019"
+  color_theme: "SAND"
+  scenario_to_analyse: ct1
+  classification: c29_s33
+  template_default: ofce
+  language: "en"
+number-sections: true
+---
+
+
+```{r}
+#| label: setup
+#| include: false
+
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  results = "hide"
+)
+
+```
+
+
+```{r}
+#| label: Plots default options
+
+
+startyear <- params$startyear
+endyear <- params$endyear
+shockyear <- params$shockyear
+scenario_to_analyse <- params$scenario_to_analyse
+classification <- params$classification
+template_default <- params$template_default
+project_name <- params$project_name
+color_theme <- params$color_theme
+language <- params$language
+
+scenario <- scenario_to_analyse
+scenario_name <- scenario_to_analyse
+```
+
+
+```{r}
+#| label: Required packages
+#| message: false
+#| warning: false
+
+# Load functions
+source("src/functions.R")
+
+```
+
+
+```{r}
+#| label: load data and bridges
+
+
+data <-readRDS(file = file.path("data","output", paste0(project_name,"_sec_com",".rds")))
+
+#data_com_sec<-readRDS(file = file.path("data","output", paste0(project_name,"_sec_com",".rds")))
+
+source(paste0("src/bridges/bridge_",classification,".R"))
+source(paste0("src/bridges/codenames_",classification,".R"))
+
+```
+
+```{r set properties}
+#Set font
+# windowsFonts(Arial=windowsFont("Arial"))
+
+#Number of digits desired for the results (table)
+digits_numb = 1
+
+#Define palettes
+color_themes = c("SAND", "ROSE")
+lines = list(c("#552F31FF","#DC363BFF","#EE5D36FF","#EFCF40FF","#698E7CFF","#315886FF","#2B2D2DFF","#CBB193FF"),
+             c("#C70E7BFF","#FC6882FF","#DE1F6CFF","#C00559FF","#C86C7CFF")  #ROSE
+               ) #enter at least five colors
+
+bars = list(c("#552F31FF","#DC363BFF","#EE5D36FF","#EFCF40FF","#698E7CFF","#315886FF","#2B2D2DFF","#CBB193FF"),
+            c("#552F31FF","#DC363BFF","#EE5D36FF","#EFCF40FF","#698E7CFF","#315886FF","#2B2D2DFF","#CBB193FF"))
+
+background = c("#CB9060FF", #SAND
+               "#EE4C97FF"  #ROSE
+         )
+
+text = c("black", #SAND
+         "white"  #ROSE
+         )
+
+x = match(color_theme,color_themes)
+
+#Set table colors
+table_body = "white"
+table_header = background[x]
+table_footer = background[x]
+table_header_text = text[x]
+table_footer_text = text[x]
+table_body_text = "black"
+
+#Set table borderline colors
+border_inner_header = "black"
+border_inner_body = "grey83"
+border_outer_all = "black"
+
+#Set graphics colors
+plot_header = background[x]
+plot_header_text = text[x]
+lines_palette = lines[[x]] 
+bars_palette = bars[[x]]
+```
+
+```{r}
+#| label: Testing version of necessary functions
+
+# Interactive line plot with plotly
+line_plot <- function(data = NULL, series = NULL, scenarios = scenario_to_analyse, 
+                      labels = NULL, 
+                      start = startyear,
+                      end = endyear,
+                      transformation = "rediff",
+                      plot_title = "",
+                      y_axis_title = NULL,
+                      color_palette = NULL,
+                      unit = 1){
+  
+  if(length(scenarios) > 1 & length(series) >1){
+    message(paste0("It is complicated to show multiple variables with multiple scenarii at the same time.\n",
+                   "The first variable ", series[1] ," and all the scenarii will be kept.\n "))
+    series <- series[1]
+    labels <- scenarios
+  }
+  
+  data_in <- data %>% 
+    filter(variable %in% series,
+           year %in% c(start:end)) %>%
+    long_input() %>%
+    filter(scenario %in% c(scenarios, "baseline"))
+  
+  ### Calculation: relative difference, absolute difference, level and growth rate
+  if(transformation == "rediff"){
+    
+    data_in %<>% filter(scenario != "baseline") %>%
+      mutate(values = values/values_ref -1)
+    y_axis_title <- ifelse(is.null(y_axis_title), 
+                           yes = "in relative different from BAU",
+                           no = y_axis_title)
+    hover_text <- paste0("Value: ", round(data_in$values*unit,4)*100,"%")
+  }else if(transformation == "diff"){
+    
+    data_in %<>% filter(scenario != "baseline") %>%
+      mutate(values = values - values_ref)
+    y_axis_title <- ifelse(is.null(y_axis_title), 
+                           yes = "in absolute different from BAU",
+                           no = y_axis_title)
+    hover_text <- paste0("Value: ", round(data_in$values*unit,2))
+  }else if(transformation == "gr"){
+    
+    data_in %<>% group_by(scenario,variable) %>%
+      mutate(values = values/lag(values)-1) %>% ungroup()
+    y_axis_title <- ifelse(is.null(y_axis_title), 
+                           yes = "in growth rate, dash line for BAU",
+                           no = y_axis_title)
+    hover_text <- paste0("Value: ", round(data_in$values*unit,4)*100,"%")
+  }else if(transformation == "level"){
+    data_in <- data_in
+    y_axis_title <- ifelse(is.null(y_axis_title), 
+                           yes = "in level, dash line for BAU",
+                           no = y_axis_title) 
+    hover_text <- paste0("Value: ", round(data_in$values*unit,2))
+  }
+  
+  if(is.null(labels)){
+    if(length(series) >0){
+      labels <- series
+    }else if(length(scenarios)>0){
+      labels <- scenarios
+    }
+  }
+  
+  if(length(series) >0){
+    data_in %<>% left_join(data.frame(variable = series, labels = labels), by = "variable")
+  }else if(length(scenarios)>0){
+    data_in %<>% left_join(data.frame(scenario = scenarios, labels = labels), by = "scenarii")
+  }
+  
+  fig <- plot_ly(data = data_in, x = ~year, y = ~values*unit, color = ~labels, colors = lines[[x]],
+                 linetype = ~index_scen, name = ~labels, legendgroup = ~labels,
+                 line = list(width = 2),
+                 type = 'scatter', mode = 'lines',
+                 hovertemplate = paste0("<b>", data_in$labels, "</b><br>",
+                                        "Year: ", data_in$year, "<br>",
+                                        hover_text,
+                                        "<extra></extra>")) %>%
+    layout(yaxis = list(title = y_axis_title, ticks="outside",
+                        tickwidth=1.5, ticklen=5,showline= T,
+                        linewidth=1.5, linecolor='black', mirror = T),
+           xaxis = list(title = "",showline= T, linewidth=1.5, linecolor='black', mirror = T),
+           title = list(text = plot_title, y = 0.99, xref = "paper"),
+           dragmode = TRUE,
+           legend = list(orientation = "h", x = 0, xref = "x", y = -0.08, yref = "y"),
+           width = 580,
+           height = 450,
+           showlegend = TRUE,
+           margin = list(autoexpand = FALSE, b = 150, l=100))
+  
+  
+  if(transformation == "gr"|transformation == "rediff"){
+    fig %<>% layout(yaxis = list(tickformat = ".1%"))
+  }
+  
+  return(fig)
+}
+
+
+
+contrib_plotly <- function(data = NULL, contrib_comp = NULL, contrib_comp_label = NULL, plot_title = "",
+                           line = TRUE, y_axis_title = "in relative difference from BAU"){
+
+  data_in <- data %>% 
+    filter(variable %in% contrib_comp) %>%
+    left_join(data.frame(variable = contrib_comp, labels = contrib_comp_label), 
+                                by = "variable") %>%
+    filter(year %in% c(startyear:endyear))
+  
+  fig <- plot_ly() %>%
+    add_trace(data = data_in, x = ~year, y = ~value, type = "bar", 
+              color = ~labels, colors = bars_palette,
+              hovertext = paste0("<b>",data_in$labels,"</b><br>",
+                                 data_in$year, "<br>",
+                                 "Value: ", round(data_in$value*100,2),"%"),
+              hovertemplate = paste0("%{hovertext}","<extra></extra>")
+    ) %>%
+    layout(barmode = "relative",
+           legend = list(orientation = "h", x = 0, xref = "center", y = -0.08, yref = "y",
+                         itemizing = "constant"),
+           yaxis = list(title = y_axis_title,ticks="outside", tickwidth=1.5, ticklen=5,tickformat = ".1%",
+                        showline= T, linewidth=1.5, linecolor='black', mirror = T),
+           xaxis = list(title = "",
+                        showline= T, linewidth=1.5, linecolor='black', mirror = T),
+           title = list(text = plot_title, y = 0.99,  xref = "paper"),
+           dragmode = TRUE,
+           width = 580,
+           height = 450,
+           margin = list(autoexpand = FALSE, b = 150, l =100)
+           )
+  
+  if(line == TRUE){
+    data_line <- data_in %>%group_by(year) %>%
+      mutate(value = sum(value)) %>% select(year, value) %>% unique() %>% ungroup()
+    fig %<>% add_trace(data = data_line, x = ~year, y = ~value, line = list(color = "#00496FFF", width = 4), 
+                       marker = list(color = "#DE1F6CFF"), showlegend = FALSE,
+                       hovertext = paste0("<b>Total variation</b><br>",
+                                          data_line$year, "<br>",
+                                          "Value: ", round(data_line$value*100,2),"%"),
+                       hovertemplate = paste0("%{hovertext}","<extra></extra>"),
+                       type = "scatter", mode = "lines+markers")
+  }
+  
+  return(fig)
+}
+
+  
+```
+
+
+# Macroeconomic results
+
+## Result summary
+
+```{r}
+#| label: tbl-macro-9
+#| tbl-cap: Table macro
+#| results: asis
+
+test <- table_macro(data = data %>% long_input, shock = scenario_to_analyse)
+
+test
+
+
+```
+
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+
+## GDP and its components
+
+::: columns
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: Graph GDP
+#| results: asis
+
+A <- line_plot(data, series = c("GDP", "CH", "I", "G","X","M"), 
+               labels = c("Gross domestic product", "Households consumption", "Investment", "Public spending","Exports","Imports"), 
+               plot_title = "GDP and its components")
+
+A
+```
+</center>
+:::
+
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: Graph trade balance
+#| results: asis
+
+A <- line_plot(data, series = c("RBAL_TRADE"),
+               labels = c("Trade balance"),
+               plot_title = "Trade balance in point of GDP",
+               transformation = "diff",
+               unit = 100)
+
+A
+
+```
+</center>
+
+:::
+
+:::
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+## GDP and its components (Growth rate)
+
+::: columns 
+
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: GDP growth rate
+#| results: asis
+
+B <- line_plot(data, series = c("GDP", "CH", "I", "G"), 
+               labels = c("Gross domestic product", "Households consumption", "Investment", "Public spending"), 
+               plot_title = "GDP and its components",
+               transformation = "gr")
+
+B
+
+```
+</center>
+:::
+
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: external trade growth rate
+#| results: asis
+
+A <- line_plot(data, series = c("X", "M"),
+               labels = c("Exports", "Imports"),
+               plot_title = "External trade",
+               transformation = "gr")
+
+A
+
+```
+</center>
+:::
+
+:::
+
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+## Contribution to the GDP change relative to the baseline (expenditure approach)
+::: columns
+
+::: {.column width="50%"}
+
+```{r}
+#| results: hide
+#| 
+variables_selection = c("M","X", "CH", "I", "G","DS", "GDP")
+new_indicators <- data %>% 
+  # 1. Put in Wide format
+  wide_data(variables = variables_selection , out_format = "list") %>%  ## 1. passe en wide
+  # 2. Calculate indicators
+  map(~.x %>%          
+        mutate(
+          BAL_TRADE = X - M,
+          CH_G = CH + G,
+          I_DS = I + DS)
+      
+      ) %>% 
+  long_data()
+
+contrib_comp <- c( "CH_G", "I_DS", "BAL_TRADE")
+contrib_comp_label <- c( "Final consumption", "Investment", "Trade balance")
+
+data_plot <-  contrib(new_indicators,"GDP", contrib_comp, scenar = c("baseline",scenario_name))
+```
+
+<center>
+```{r}
+#| label: contribution of GDP
+#| results: asis
+
+A <- contrib_plotly(data_plot, contrib_comp, contrib_comp_label,
+             plot_title = "GDP")
+A
+```
+</center>
+:::
+
+
+::: {.column width="50%"}
+
+```{r}
+#| results: hide
+
+variables_selection = c("M","X", "CH", "I", "G","DS", "GDP")
+new_indicators <- data %>% 
+  # 1. Put in Wide format
+  wide_data(variables = variables_selection , out_format = "list") %>%  ## 1. passe en wide
+  # 2. Calculate indicators
+  map(~.x %>%          
+        mutate(
+          BAL_TRADE = X - M,
+          CH_G = CH + G,
+          I_DS = I + DS)
+      
+      ) %>% 
+  long_data()
+contrib_comp <- c( "X", "M")
+contrib_comp_label <- c("Exports", "Imports")
+
+data_plot <-  contrib(new_indicators,"BAL_TRADE", contrib_comp, scenar = c("baseline",scenario_name), indicator = "rel.diff", neg.value = "M")
+```
+
+<center>
+```{r}
+#| label: contribution of trade balance
+#| results: asis
+
+A <- contrib_plotly(data_plot, contrib_comp, contrib_comp_label,
+             plot_title = "Trade balance")
+A
+
+```
+</center>
+
+:::
+
+:::
+
+
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+## Contribution to the GDP change relative to the baseline (income approch)
+
+::: columns
+
+::: {.column width="50%"}
+
+
+```{r}
+#| results: hide
+
+contrib_comp <- c( "VA", "NTAXC")
+contrib_comp_label <- c( "Value-Added","Net taxes on products")
+
+data_plot <-  contrib(data,"GDP", contrib_comp, scenar = c("baseline",scenario_name))
+```
+
+<center>
+```{r}
+#| label: contribution of GDP bis
+#| results: asis
+
+A <- contrib_plotly(data_plot, contrib_comp, contrib_comp_label,
+             plot_title = "GDP")
+A
+
+```
+</center>
+
+
+:::
+
+::: {.column width="50%"}
+
+```{r}
+#| results: hide
+
+contrib_comp <- c("GOS", "WAGES", "RSC", "NTAXS")
+contrib_comp_label <- c("Gross operating surplus", "Gross wages", "Employers social contributions", "Net taxes on the production")
+
+data_plot <-  contrib(data,"VA", contrib_comp, scenar = c("baseline",scenario_name))
+```
+
+<center>
+```{r}
+#| label: contribution of value added
+#| results: asis
+
+A <- contrib_plotly(data_plot, contrib_comp, contrib_comp_label,
+             plot_title = "Value-added")
+A
+
+```
+</center>
+:::
+
+:::
+
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+## Value-added and its components
+
+::: columns
+
+::: {.column width="50%"}
+
+
+<center>
+```{r}
+#| label: value-added and its components
+#| results: asis
+
+contrib_comp <- c("Y", "CI")
+contrib_comp_label <- c("Production", "Intermediary consumption")
+
+A <- line_plot(data, series = c(contrib_comp, "VA"), 
+               labels =  c(contrib_comp_label,"Value-added"), 
+               plot_title = "Value-added and its components")
+
+A
+
+```
+</center>
+
+:::
+
+
+::: {.column width="50%"}
+
+```{r}
+#| results: hide
+
+contrib_comp <- c("Y", "CI")
+contrib_comp_label <- c("Production", "Intermediary consumption")
+
+data_plot <-  contrib(data,"VA", contrib_comp, scenar = c("baseline",scenario_name), indicator = "rel.diff", neg.value = "CI")
+```
+
+<center>
+```{r}
+#| label: contribution of value added bis
+#| results: asis
+
+A <- contrib_plotly(data_plot, contrib_comp, contrib_comp_label,
+             plot_title = "Contributions to changes in Value-Added")
+A
+
+```
+</center>
+:::
+
+:::
+
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+## Employment
+
+::: columns
+
+::: {.column width="50%"}
+
+
+<center>
+```{r}
+#| label: labour force
+#| results: asis
+
+
+A <- line_plot(data, series = "F_L", 
+               labels =  "Labour",
+               plot_title = "Employment level",
+               transformation = "level")
+
+A
+
+```
+</center>
+
+:::
+
+::: {.column width="50%"}
+
+
+<center>
+```{r}
+#| label: labour force difference
+#| results: asis
+
+A <- line_plot(data, series = "F_L", 
+               labels =  "Labour",
+               plot_title = "Employment change",
+               transformation = "diff")
+
+A
+
+```
+</center>
+
+:::
+
+:::
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+## Unemployment
+
+::: columns 
+
+::: {.column width="50%"}
+
+<center>
+```{r}
+#| label: Unemployement rate difference
+#| results: asis
+
+A <- line_plot(data, series = "UNR", 
+               labels =  "Unemployment",
+               plot_title = "Unemployment rate",
+               transformation = "diff",
+               unit = 100,
+               y_axis_title = "percentage point, in difference from BAU")
+
+A
+
+```
+</center>
+
+:::
+::: {.column width="50%"}
+
+<center>
+```{r}
+#| label: Unemployement rate
+#| results: asis
+
+
+A <- line_plot(data, series = "UNR", 
+               labels =  "Unemployment rate",
+               plot_title = "Unemployment rate",
+               transformation = "level",
+               unit = 100,
+               y_axis_title = "% (dash line for BAU)")
+
+A
+```
+</center>
+
+:::
+:::
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+# Government
+
+## Debt of the Government
+
+::: columns
+
+::: {.column width="50%"}
+
+<center>
+```{r}
+#| label: Debt difference
+#| results: asis
+
+
+variable_macro <- c("RDEBT_G_VAL") %>% toupper()
+label_macro <- c("Debt")
+
+A <- line_plot(data, series = variable_macro, 
+               labels =  label_macro,
+               plot_title = "Debt to GDP ratio",
+               transformation = "diff",
+               unit = 100,
+               y_axis_title = "percentage point, in difference from BAU")
+
+A
+
+```
+</center>
+
+:::
+
+::: {.column width="50%"}
+
+
+<center>
+```{r}
+#| label: Debt
+#| results: asis
+
+
+variable_macro <- c("RDEBT_G_VAL") %>% toupper()
+label_macro <- c("Debt")
+
+A <- line_plot(data, series = variable_macro, 
+               labels =  label_macro,
+               plot_title = "Debt to GDP ratio",
+               transformation = "level",
+               unit = 100,
+               y_axis_title = "% (dash line for BAU)")
+
+A
+
+```
+</center>
+
+
+:::
+
+:::
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+## Savings/deficit of the Government {.smaller}
+
+The **Savings of the Government** corresponds to the net lending/borrowing (Income minus spending), which is the published deficit/savings of the Government.
+
+The **Total balance of the Government** corresponds to the savings excluding the reimbursement of the debt from the Government spending. 
+
+The **Primary balance of the Government** corresponds to the savings excluding the reimbursement and the interest paid on the debt from the Government spending. 
+
+::: columns
+
+::: {.column width="50%"}
+
+
+<center>
+```{r}
+#| label: Saving to GDP ratio
+#| results: asis
+
+variable_macro <- c("RSAV_G_VAL", "RBal_G_Prim_VAL", "RBal_G_Tot_VAL") %>% toupper()
+label_macro <- c("Savings", "Primary balance", "Total balance")
+
+A <- line_plot(data, series = variable_macro, 
+               labels =  label_macro,
+               plot_title = "Saving to GDP ratio indicators",
+               transformation = "diff",
+               unit = 100,
+               y_axis_title = "percentage point, in difference from BAU")
+
+A
+```
+</center>
+
+
+:::
+
+::: {.column width="50%"}
+
+<center>
+```{r}
+#| label: Saving to GDP ratio level
+#| results: asis
+
+variable_macro <- c("RSAV_G_VAL", "RBal_G_Prim_VAL", "RBal_G_Tot_VAL") %>% toupper()
+label_macro <- c("Savings", "Primary balance", "Total balance")
+
+
+A <- line_plot(data, series = variable_macro, 
+               labels =  label_macro,
+               plot_title = "Saving to GDP ratio indocators",
+               transformation = "level",
+               unit = 100,
+               y_axis_title = "% (dash line for BAU)")
+
+A
+
+```
+</center>
+
+
+:::
+
+:::
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+## Incomes and spending of the Government
+
+<center>
+```{r}
+#| label: Incomes and spending
+#| results: asis
+
+A <- line_plot(data, series = c("INC_G_VAL", "SPEND_G_VAL"), 
+               labels =  c("Incomes", "Spending"),
+               plot_title = "Incomes and spending")
+
+A
+
+```
+</center>
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+## Carbon tax incomes (as a percentage of GDP)
+
+::: columns
+
+::: {.column width="50%"}
+
+<center>
+```{r}
+#| results: asis
+#| 
+variables_selection = c("T2VAL_SEC","T2VAL_CH", "GDP")
+new_indicators <- data %>% 
+  # 1. Put in Wide format
+  wide_data(variables = variables_selection , out_format = "list") %>%  ## 1. passe en wide
+  # 2. Calculate indicators
+  map(~.x %>%          
+        mutate(
+          R_T2VAL_SEC_GDP = T2VAL_SEC / GDP,
+          R_T2VAL_CH_GDP = T2VAL_CH / GDP,
+          R_T2VAL_GDP = (T2VAL_SEC + T2VAL_CH) / GDP
+          )
+
+      ) %>% 
+  long_data()
+
+variable_macro <- c("R_T2VAL_SEC_GDP", "R_T2VAL_CH_GDP")
+label_macro <- c("Sectors", "Households")
+
+A <- line_plot(new_indicators, series = variable_macro, 
+               labels =  label_macro,
+               plot_title = "Incomes by sources",
+               transformation = "level",
+               unit = 100,
+               y_axis_title = "% (dash line for BAU)")
+
+A
+
+```
+</center>
+
+:::
+
+::: {.column width="50%"}
+
+```{r}
+#| results: hide
+#| message: false
+
+variables_selection = c("T2VAL_SEC","T2VAL_CH", "GDP")
+new_indicators <- data %>% 
+  # 1. Put in Wide format
+  wide_data(variables = variables_selection , out_format = "list") %>%  ## 1. passe en wide
+  # 2. Calculate indicators
+  map(~.x %>%          
+        mutate(
+          R_T2VAL_SEC_GDP = T2VAL_SEC / GDP,
+          R_T2VAL_CH_GDP = T2VAL_CH / GDP,
+          R_T2VAL_GDP = (T2VAL_SEC + T2VAL_CH) / GDP
+          )
+
+      ) %>% 
+  long_data()
+
+contrib_comp <- c( "R_T2VAL_SEC_GDP", "R_T2VAL_CH_GDP")
+contrib_comp_label <- c("Sectors", "Households")
+
+if (new_indicators$baseline[which(new_indicators$year == startyear & new_indicators$variable=="R_T2VAL_GDP")]==0) {
+  
+A <- line_plot(new_indicators, series = "R_T2VAL_GDP", 
+               labels =  "Carbon tax income",
+               plot_title = "Total incomes",
+               transformation = "level",
+               unit = 100,
+               y_axis_title = "% (dash line for BAU)")
+
+} else {
+  data_plot <-  contrib(new_indicators,"R_T2VAL_GDP", contrib_comp, scenar = c("baseline",scenario_name), indicator = "rel.diff")
+
+A <- contrib_plotly(data_plot, contrib_comp, contrib_comp_label,
+             plot_title = "Contributions to the change in Carbon tax incomes (in difference from baseline)")
+
+}
+
+```
+
+<center>
+```{r}
+#| results: asis
+
+A
+
+```
+</center>
+
+:::
+
+:::
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+## Prices and wages 
+
+::: columns
+
+::: {.column width="50%"}
+
+<center>
+```{r}
+#| label: price
+#| results: asis
+
+
+label_prices <- c("Consumption", "Production", "Value added","Imports", "Exports")
+
+A <- line_plot(data, series = c("PCH", "PY", "PVA", "PM", "PX"), 
+               labels =  label_prices,
+               plot_title = "Prices")
+
+A
+
+```
+</center>
+
+
+:::
+
+::: {.column width="50%"}
+
+<center>
+```{r}
+#| label: wages
+#| results: asis
+
+
+
+A <- line_plot(data, series = "W", 
+               labels =  "Wage",
+               plot_title = "Gross nominal wages")
+
+A
+
+```
+</center>
+
+:::
+
+:::
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+
+# Results per sector (activity)
+
+## Prices of production and of value-added per sector
+
+```{r Price_Sect, fig.height = 6, fig.width=14}
+
+variables_selection <-   c(  variables_like(data,"^VA_S0",FALSE),
+                             variables_like(data,"^VA_VAL_S0",FALSE),   
+                             variables_like(data,"^PY_S0",FALSE),   
+                             "PVA", "PY")
+
+calcul_indic <- function(data){
+   res <- data
+
+   nb_sect = length(names_sectors$code[which(grepl("^S",names_sectors$code))])
+
+for (i in c(1:nb_sect)){
+
+           res <- mutate(res,
+                !!paste0("PVA_S00",i) := get(paste0("VA_S00",i))/get(paste0("VA_VAL_S00",i))   ) 
+
+}
+
+  return(res)
+  
+}
+
+
+new_indicators <- data %>%  dplyr::filter(variable %in% variables_selection) %>% 
+  # 1. Put in Wide format
+  wide_data(variables = variables_selection , out_format = "list") %>%  ## 1. passe en wide
+  # 2. Calculate indicators
+  map(~calcul_indic(.x)) %>% 
+  long_data()
+
+```
+
+
+::: columns
+
+::: {.column width="50%"}
+
+```{r}
+#| label: production price
+#| results: asis
+
+B <- line_plot(new_indicators, series = paste0("PY_S00",c(1:8)), 
+               labels = tail(names_sectors$name,8),
+               plot_title = "Production price")
+
+B
+
+```
+
+
+::::
+
+::: {.column width="50%"}
+
+
+```{r}
+#| label: value-added price
+#| results: asis
+
+
+A <- line_plot(new_indicators, series = paste0("PVA_S00",c(1:8)), 
+               labels = tail(names_sectors$name,8),
+               plot_title = "Value- added price")
+
+A
+
+```
+
+
+::::
+
+:::
+
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+## Production per sector
+
+::: columns
+
+:::: {.column width="50%"}
+
+```{r}
+#| label: production per sector
+#| results: asis
+
+
+
+A <- line_plot(data, series = paste0("Y_S00",c(1:8)), 
+               labels = tail(names_sectors$name,8),
+               plot_title = "Production of sectors")
+
+A
+
+```
+
+
+::::
+
+:::: {.column width="50%"}
+
+```{r}
+#| results: hide
+
+data_plot <- contrib.sub(data,var1 =  "Y",
+                          group_type = "sector", scenar = c("baseline", scenario_name))
+
+```
+
+```{r}
+#| label: sector production contribution
+#| results: asis
+
+
+A <- contrib_plotly(data_plot, 
+                    contrib_comp = paste0("Y_S00",c(1:8)),
+                    contrib_comp_label = tail(names_sectors$name,8),
+             plot_title = "Total production and sectorial contribution")
+
+A
+
+```
+
+
+::::
+
+:::
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+## Value-Added per sector
+
+::: columns
+
+:::: {.column width="50%"}
+
+```{r}
+#| label: value-added per sector
+#| results: asis
+
+
+A <- line_plot(data, series = paste0("VA_S00",c(1:8)), 
+               labels = tail(names_sectors$name,8),
+               plot_title = "Value-added of sector")
+
+A
+
+```
+
+::::
+
+:::: {.column width="50%"}
+
+```{r}
+#| results: hide
+
+data_plot <- contrib.sub(data,var1 =  "VA",
+group_type = "sector", scenar = c("baseline", scenario_name))
+```
+
+```{r}
+#| label: sector valje-added contribution
+#| results: asis
+
+
+A <- contrib_plotly(data_plot, 
+                    contrib_comp = paste0("VA_S00",c(1:8)),
+                    contrib_comp_label = tail(names_sectors$name,8),
+             plot_title = "Total value-added and sectorial contribution")
+
+A
+
+```
+
+::::
+
+:::
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+## Employment per sector
+::: columns
+
+:::: {.column width="50%"}
+
+```{r}
+#| label: sector employment
+#| results: asis
+
+
+A <- line_plot(data, series = paste0("F_L_S00",c(1:8)), 
+               labels = tail(names_sectors$name,8),
+               plot_title = "Employment of sectors")
+
+A
+
+```
+
+::::
+
+:::: {.column width="50%"}
+
+```{r}
+#| results: hide
+
+data_plot <- contrib.sub(data,var1 =  "F_L",
+group_type = "sector", scenar = c("baseline", scenario_name))
+```
+
+
+```{r}
+#| label: sector employment contribution
+#| results: asis
+
+
+A <- contrib_plotly(data_plot, 
+                    contrib_comp = paste0("F_L_S00",c(1:8)),
+                    contrib_comp_label = tail(names_sectors$name,8),
+             plot_title = "Total employment and sectorial contribution")
+
+A
+
+```
+
+::::
+
+:::
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+## Investment per sector
+
+::: columns
+
+:::: {.column width="50%"}
+
+```{r}
+#| label: investment of sector
+#| results: asis
+
+A <- line_plot(data, series = paste0("I_S00",c(1:8)), 
+               labels = tail(names_sectors$name,8),
+               plot_title = "Investment of sectors")
+
+A
+
+```
+
+::::
+
+:::: {.column width="50%"}
+
+```{r}
+#| results: hide
+
+data_plot <- contrib.sub(data,var1 =  "I",
+group_type = "sector", scenar = c("baseline", scenario_name))
+```
+
+```{r}
+#| label: sector investment contribution
+#| results: asis
+
+
+A <- contrib_plotly(data_plot, 
+                    contrib_comp = paste0("I_S00",c(1:8)),
+                    contrib_comp_label = tail(names_sectors$name,8),
+             plot_title = "Total Investment and sectorial contribution")
+
+A
+
+```
+
+::::
+
+:::
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+# Results per product (commodity)
+
+## Investment per product
+
+::: columns
+
+:::: {.column width="50%"}
+
+```{r}
+#| label: investment of commodity
+#| results: asis
+
+A <- line_plot(data, series = paste0("I_C00",c(1:8)), 
+               labels = tail(names_commodities$name,8),
+               plot_title = "Investment in commodities")
+
+A
+
+```
+
+::::
+
+:::: {.column width="50%"}
+
+```{r}
+#| results: hide
+
+data_plot <- contrib.sub(data,var1 =  "I",
+group_type = "C", scenar = c("baseline", scenario_name))
+```
+
+
+```{r}
+#| label: commodity investment contribution
+#| results: asis
+
+A <- contrib_plotly(data_plot, 
+                    contrib_comp = paste0("I_C00",c(1:8)),
+                    contrib_comp_label = tail(names_commodities$name,8),
+             plot_title = "Total investment and commodity contribution")
+
+A
+
+```
+
+::::
+
+:::
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+## Intermediary consumption per product
+
+::: columns
+
+:::: {.column width="50%"}
+
+```{r}
+#| label: intermediary consumption of commodity
+#| results: asis
+
+
+A <- line_plot(data, series = paste0("CI_C00",c(1:8)), 
+               labels = tail(names_commodities$name,8),
+               plot_title = "Intermediary consumption in commodities")
+
+A
+
+```
+
+::::
+
+:::: {.column width="50%"}
+
+```{r}
+#| results: hide
+
+data_plot <- contrib.sub(data,var1 =  "CI",
+group_type = "C", scenar = c("baseline", scenario_name))
+```
+
+```{r}
+#| label: commodity intermediary consuption contribution
+#| results: asis
+
+
+A <- contrib_plotly(data_plot, 
+                    contrib_comp = paste0("CI_C00",c(1:8)),
+                    contrib_comp_label = tail(names_commodities$name,8),
+             plot_title = "Contribution of commodities")
+
+A
+
+```
+
+::::
+
+:::
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+## Households' final consumption per product
+
+::: columns
+
+:::: {.column width="50%"}
+
+```{r}
+#| label: households consumption of commodity
+#| results: asis
+
+
+A <- line_plot(data, series = paste0("CH_C00",c(1:8)), 
+               labels = tail(names_commodities$name,8),
+               plot_title = "Households' consumption in commodities")
+
+A
+
+```
+
+::::
+
+:::: {.column width="50%"}
+
+```{r}
+#| results: hide
+
+data_plot <- contrib.sub(data,var1 =  "CH",
+group_type = "C", scenar = c("baseline", scenario_name))
+```
+
+
+```{r}
+#| label: commodity households consumption contribution
+#| results: asis
+
+A <- contrib_plotly(data_plot, 
+                    contrib_comp = paste0("CH_C00",c(1:8)),
+                    contrib_comp_label = tail(names_commodities$name,8),
+             plot_title = "Contribution of commodities")
+
+A
+
+```
+
+::::
+
+:::
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+## Commodity prices
+
+::: columns
+
+:::: {.column width="50%"}
+
+```{r}
+#| label: households consumption price of commodity
+#| results: asis
+
+A <- line_plot(data, series = paste0("PCH_C00",c(1:8)), 
+               labels = tail(names_commodities$name,8),
+               plot_title = "Household's Consumption")
+
+A
+
+```
+
+::::
+
+:::: {.column width="50%"}
+
+```{r}
+#| label: intermediary consumption price of commodity
+#| results: asis
+
+A <- line_plot(data, series = paste0("PCI_C00",c(1:8)), 
+               labels = tail(names_commodities$name,8),
+               plot_title = "Intermediary consumption")
+
+A
+
+```
+
+::::
+
+:::
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+## Consumption prices for imported and domesticly producted commodities
+
+::: columns
+
+:::: {.column width="50%"}
+
+```{r}
+#| label: CH price for domesticly producted
+#| results: asis
+
+
+A <- line_plot(data, series = paste0("PCHD_C00",c(1:8)), 
+               labels = tail(names_commodities$name,8),
+               plot_title = "Domesticly producted commodities")
+
+A
+
+```
+
+::::
+
+:::: {.column width="50%"}
+
+```{r}
+#| label: CH price for imported producted
+#| results: asis
+
+
+A <- line_plot(data, series = paste0("PCHM_C00",c(1:8)), 
+               labels = tail(names_commodities$name,8),
+               plot_title = "Imported commodities")
+
+A
+
+```
+
+::::
+
+:::
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+# GHG emissions
+
+## GHG emissions per driver
+
+```{r GHG emissions, fig.height = 6, fig.width=14}
+#| results: hide
+
+variables_selection = c("EMS_CI", "EMS_Y", "EMS_MAT", "EMS_CH", "EMS")
+
+new_indicators <- data %>% 
+  # 1. Put in Wide format
+  wide_data(variables = variables_selection , out_format = "list") %>%  ## 1. passe en wide
+  # 2. Calculate indicators
+  map(~.x %>%          
+        mutate(
+          EMS_PROD = EMS_MAT  + EMS_Y)
+      
+      ) %>% 
+  long_data()
+
+contrib_comp <- c("EMS_CI", "EMS_PROD", "EMS_CH")
+contrib_comp_label <- c("Intermediary consumption", "Production process", "Household's final consumption")
+data_plot <-  contrib(new_indicators, "EMS", contrib_comp, scenar = c("baseline",scenario_name))
+
+```
+
+
+::: columns
+
+::: {.column width="50%"}
+
+```{r}
+#| label: CO2 emissions
+#| results: asis
+
+A <- line_plot(new_indicators, series = c(contrib_comp, c("EMS")), 
+               labels = c(contrib_comp_label,c("Total GHG emssions")),
+               plot_title = "GHG emissions from different drivers")
+
+A
+
+```
+
+
+::::
+
+::: {.column width="50%"}
+
+
+```{r}
+#| label: GHG emissions contribution
+#| results: asis
+
+A <- contrib_plotly(data_plot, 
+                    contrib_comp = contrib_comp,
+                    contrib_comp_label = contrib_comp_label,
+             plot_title = "Contributions of different drivers")
+
+A
+
+```
+
+
+::::
+
+:::
+
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+## GHG emissions per source
+
+<center>
+```{r}
+#| results: asis
+
+#il y a un petit bug de contribution <- a regarder apres
+
+variables_selection <-   c(  variables_like(data,"^EMS_CI_C0",FALSE),
+                             variables_like(data,"^EMS_CH_C0",FALSE),   
+                             "EMS_CI", "EMS_CH"  )
+
+calcul_indic <- function(data){
+   res <- data
+   res <- mutate(res,     
+          EMS_CI_CH = EMS_CI + EMS_CH)
+
+   
+nb_com = length(names_commodities$code[which(grepl("^C",names_commodities$code))])
+
+ for (i in c(1:nb_com)){
+
+   if(exists(paste0("EMS_CI_C00",i), data ) & exists(paste0("EMS_CH_C00",i), data )  ){   
+     res <- mutate(res,
+                !!paste0("EMS_CI_CH_C00",i) := get(paste0("EMS_CI_C00",i)) + get(paste0("EMS_CH_C00",i)) ) 
+   }
+
+   if(exists(paste0("EMS_CI_C00",i), data ) & !exists(paste0("EMS_CH_C00",i), data )  ){   
+     res <- mutate(res,
+                !!paste0("EMS_CI_CH_C00",i) := get(paste0("EMS_CI_C00",i))  ) 
+   }
+   
+   
+   if(!exists(paste0("EMS_CI_C00",i), data ) & exists(paste0("EMS_CH_C00",i), data )  ){   
+     res <- mutate(res,
+                !!paste0("EMS_CI_CH_C00",i) :=  get(paste0("EMS_CH_C00",i)) ) 
+   }
+
+ }
+
+    return(res)
+  
+}
+
+new_indicators <- data %>%  dplyr::filter(variable %in% variables_selection) %>% 
+  # 1. Put in Wide format
+  wide_data(variables = variables_selection , out_format = "list") %>%  ## 1. passe en wide
+  # 2. Calculate indicators
+  map(~calcul_indic(.x)) %>% 
+  long_data()
+
+A <- line_plot(new_indicators, series = paste0("EMS_CI_CH_C00",c(1:8)), 
+               labels = tail(names_commodities$name,8),
+               plot_title = "GHG emissions per source")
+
+
+# BUG to calculate contrib when defined for only one commodity: write in issue
+# data_plot <- contrib.sub(new_indicators,var1 =  "EMS_CI_CH",
+# group_type = "C", scenar = c("baseline", scenario_name))
+# 
+# B <- contrib.sub.plot(data_plot, template = "ofce", startyear = startyear, endyear = endyear, line_tot =  TRUE, titleplot = "Contributions to changes in GHG emissions (in difference from baseline)")
+
+A
+
+```
+</center>
+
+::: footer
+Scenario: *`r params$scenario_to_analyse`*
+:::
+

@@ -1,0 +1,2638 @@
+---
+title: "ThreeME results of energy"
+author: "ThreeME team"
+date: "`r format(Sys.Date(), '%d %B %y')`"
+format: 
+ revealjs:
+  center: true
+  navigation-mode: linear
+  theme: [simple, www/presentation.scss]
+  width: 1600
+  height: 900
+  fig-height: 4.9
+  fig-width: 6.5
+subtitle: 'Scenario: `r params$scenario_to_analyse`'
+params:
+  startyear: 2020
+  endyear: 2050
+  shockyear: 2020
+  project_name: "standard_shocks"
+  color_theme: "SAND"
+  scenario_to_analyse: expg1
+  classification: c20_s31
+  template_default: ofce
+  language: "en"
+number-sections: true
+---
+
+
+```{r}
+#| label: setup
+#| include: false
+
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  results = "hide"
+)
+
+```
+
+
+```{r}
+#| label: Plots default options
+
+
+startyear <- params$startyear
+endyear <- params$endyear
+shockyear <- params$shockyear
+scenario_to_analyse <- params$scenario_to_analyse
+classification <- params$classification
+template_default <- params$template_default
+project_name <- params$project_name
+color_theme <- params$color_theme
+language <- params$language
+
+scenario <- scenario_to_analyse
+scenario_name <- scenario_to_analyse
+```
+
+
+```{r}
+#| label: Required packages
+#| message: false
+#| warning: false
+
+# Load functions
+source("src/functions.R")
+
+```
+
+```{r}
+#| label: necessary functions
+
+# long_input <- function(data){
+#   
+#   data_long <- data %>%
+#     as.data.table() %>%
+#     mutate(values_baseline = baseline) %>%
+#     melt.data.table(id.vars = c("year","variable","values_baseline","sector", "commodity"), 
+#                     variable.name = "scenarii", value.name = "values") %>%
+#     mutate(index_scen = case_when(
+#       scenarii == "baseline" ~ 1,
+#       scenarii != "baseline" ~ 0)) %>%
+#     as.data.frame()
+#   
+#   return(data_long)
+# }
+
+```
+
+
+```{r}
+#| label: load data and bridges
+
+source(paste0("src/bridges/bridge_",classification,".R"))
+source(paste0("src/bridges/codenames_",classification,".R"))
+
+data_full<-readRDS(file = file.path("data","output", paste0(project_name, ".rds"))) %>% long_input %>% as.data.table
+data_sec<-readRDS(file = file.path("data","output", paste0(project_name, "_sec.rds"))) %>% long_input() %>% as.data.table
+
+```
+
+```{r set properties}
+#Set font
+# windowsFonts(Arial=windowsFont("Arial"))
+
+#Number of digits desired for the results (table)
+digits_numb = 1
+
+#Define palettes
+color_themes = c("SAND", "ROSE")
+lines = list(c("#552F31FF","#DC363BFF","#EE5D36FF","#EFCF40FF","#698E7CFF","#315886FF","#2B2D2DFF","#CBB193FF"),
+             c("#C70E7BFF","#FC6882FF","#DE1F6CFF","#C00559FF","#C86C7CFF")  #ROSE
+               ) #enter at least five colors
+
+bars = list(c("#552F31FF","#DC363BFF","#EE5D36FF","#EFCF40FF","#698E7CFF","#315886FF","#2B2D2DFF","#CBB193FF"),
+            c("#552F31FF","#DC363BFF","#EE5D36FF","#EFCF40FF","#698E7CFF","#315886FF","#2B2D2DFF","#CBB193FF"))
+
+background = c("#CB9060FF", #SAND
+               "#EE4C97FF"  #ROSE
+         )
+
+text = c("black", #SAND
+         "white"  #ROSE
+         )
+
+x = match(color_theme,color_themes)
+
+#Set table colors
+table_body = "white"
+table_header = background[x]
+table_footer = background[x]
+table_header_text = text[x]
+table_footer_text = text[x]
+table_body_text = "black"
+
+#Set table borderline colors
+border_inner_header = "black"
+border_inner_body = "grey83"
+border_outer_all = "black"
+
+#Set graphics colors
+plot_header = background[x]
+plot_header_text = text[x]
+lines_palette = lines[[x]] 
+bars_palette = bars[[x]]
+```
+
+```{r}
+#| label: Testing version of necessary functions
+
+# Interactive line plot with plotly
+line_plot <- function(data = NULL, series = NULL, scenarios = scenario_to_analyse, 
+                      labels = NULL, 
+                      start = startyear,
+                      end = endyear,
+                      transformation = "rediff",
+                      plot_title = "",
+                      y_axis_title = NULL,
+                      color_palette = NULL,
+                      unit = 1){
+  
+  if(length(scenarios) > 1 & length(series) >1){
+    message(paste0("It is complicated to show multiple variables with multiple scenarii at the same time.\n",
+                   "The first variable ", series[1] ," and all the scenarii will be kept.\n "))
+    series <- series[1]
+    labels <- scenarios
+  }
+  
+  data_in <- data %>% 
+    filter(variable %in% series,
+           year %in% c(start:end)) %>%
+    filter(scenario %in% c(scenarios, "baseline"))
+  
+  ### Calculation: relative difference, absolute difference, level and growth rate
+  if(transformation == "rediff"){
+    
+    data_in %<>% filter(scenario != "baseline") %>%
+      mutate(values = values/values_ref -1)
+    y_axis_title <- ifelse(is.null(y_axis_title), 
+                           yes = "in relative different from BAU",
+                           no = y_axis_title)
+    hover_text <- paste0("Value: ", round(data_in$values*unit,4)*100,"%")
+  }else if(transformation == "diff"){
+    
+    data_in %<>% filter(scenario != "baseline") %>%
+      mutate(values = values - values_ref)
+    y_axis_title <- ifelse(is.null(y_axis_title), 
+                           yes = "in absolute different from BAU",
+                           no = y_axis_title)
+    hover_text <- paste0("Value: ", round(data_in$values*unit,2))
+  }else if(transformation == "gr"){
+    
+    data_in %<>% group_by(scenario,variable) %>%
+      mutate(values = values/lag(values)-1) %>% ungroup()
+    y_axis_title <- ifelse(is.null(y_axis_title), 
+                           yes = "in growth rate, dash line for BAU",
+                           no = y_axis_title)
+    hover_text <- paste0("Value: ", round(data_in$values*unit,4)*100,"%")
+  }else if(transformation == "level"){
+    data_in <- data_in
+    y_axis_title <- ifelse(is.null(y_axis_title), 
+                           yes = "in level, dash line for BAU",
+                           no = y_axis_title) 
+    hover_text <- paste0("Value: ", round(data_in$values*unit,2))
+  }
+  
+  if(is.null(labels)){
+    if(length(series) >0){
+      labels <- series
+    }else if(length(scenarios)>0){
+      labels <- scenarios
+    }
+  }
+  
+  if(length(series) >0){
+    data_in %<>% left_join(data.frame(variable = series, labels = labels), by = "variable")
+  }else if(length(scenarios)>0){
+    data_in %<>% left_join(data.frame(scenario = scenarios, labels = labels), by = "scenarii")
+  }
+  
+  fig <- plot_ly(data = data_in, x = ~year, y = ~values*unit, color = ~labels, colors = lines[[x]],
+                 linetype = ~index_scen, name = ~labels, legendgroup = ~labels,
+                 line = list(width = 2),
+                 type = 'scatter', mode = 'lines',
+                 hovertemplate = paste0("<b>", data_in$labels, "</b><br>",
+                                        "Year: ", data_in$year, "<br>",
+                                        hover_text,
+                                        "<extra></extra>")) %>%
+    layout(yaxis = list(title = y_axis_title, ticks="outside",
+                        tickwidth=1.5, ticklen=5,showline= T,
+                        linewidth=1.5, linecolor='black', mirror = T),
+           xaxis = list(title = "",showline= T, linewidth=1.5, linecolor='black', mirror = T),
+           title = list(text = plot_title, y = 0.99, xref = "paper"),
+           dragmode = TRUE,
+           legend = list(orientation = "h", x = 0, xref = "x", y = -0.08, yref = "y"),
+           width = 580,
+           height = 450,
+           showlegend = TRUE,
+           margin = list(autoexpand = FALSE, b = 150, l=100))
+  
+  
+  if(transformation == "gr"|transformation == "rediff"){
+    fig %<>% layout(yaxis = list(tickformat = ".1%"))
+  }
+  
+  return(fig)
+}
+
+
+bar_plotly <- function(data = NULL, series = NULL, labels = NULL, plot_title = "",
+                           line = FALSE, y_axis_title = "in relative difference from BAU",
+                           unit = "%"){
+  
+  data_in <- data %>% 
+    filter(variable %in% series) %>%
+    left_join(data.frame(variable = series, labels = labels), 
+              by = "variable") %>%
+    filter(year %in% c(startyear:endyear))
+  
+  
+  if(unit == "%"){
+    hover_text <- paste0("<b>",data_in$labels,"</b><br>",data_in$year, "<br>","Value: ", round(data_in$value*100,2),"%")
+  }else{
+    hover_text <- paste0("<b>",data_in$labels,"</b><br>",data_in$year, "<br>","Value: ", round(data_in$value,2)," ", unit,"</br>")
+  }
+  
+  fig <- plot_ly() %>%
+    add_trace(data = data_in, x = ~year, y = ~value, type = "bar", 
+              color = ~labels, colors = bars_palette,
+              hovertext = hover_text,
+              hovertemplate = paste0("%{hovertext}","<extra></extra>")
+    ) %>%
+    layout(barmode = "relative",
+           legend = list(orientation = "h", x = 0, xref = "center", y = -0.08, yref = "y",
+                         itemizing = "constant"),
+           yaxis = list(title = y_axis_title,ticks="outside", tickwidth=1.5, ticklen=5,
+                        tickformat = ifelse(unit=="%", ".1%", ".1f"),
+                        showline= T, linewidth=1.5, linecolor='black', mirror = T),
+           xaxis = list(title = "",
+                        showline= T, linewidth=1.5, linecolor='black', mirror = T),
+           title = list(text = plot_title, y = 0.99,  xref = "paper"),
+           dragmode = TRUE,
+           width = 580,
+           height = 450,
+           margin = list(autoexpand = FALSE, b = 150, l =100)
+    )
+  
+  if(line == TRUE){
+    data_line <- data_in %>%group_by(year) %>%
+      mutate(value = sum(value)) %>% select(year, value) %>% unique() %>% ungroup()
+    
+    if(unit == "%"){
+      hover_text <- paste0("<b>",data_line$labels,"</b><br>",data_line$year, "<br>","Value: ", round(data_line$value*100,2),"%")
+    }else{
+      hover_text <- paste0("<b>",data_line$labels,"</b><br>",data_line$year, "<br>","Value: ", round(data_in$value,2)," ", unit,"</br>")
+    }
+    
+    fig %<>% add_trace(data = data_line, x = ~year, y = ~value, line = list(color = "#00496FFF", width = 4), 
+                       marker = list(color = "#DE1F6CFF"), showlegend = FALSE,
+                       hovertext = hover_text,
+                       hovertemplate = paste0("%{hovertext}","<extra></extra>"),
+                       type = "scatter", mode = "lines+markers")
+  }
+  
+  return(fig)
+}
+
+fig_group_sec <- function(sec = "S001"){
+  data_in <- data_sec %>% filter(variable %in% c(paste0("CI_TOE_",bridge_commodities[["C007"]]%>%toupper,"_",sec),
+                                                 paste0("CI_TOE_",bridge_commodities[["C008"]]%>%toupper,"_",sec)),
+                                 scenario == "baseline") %>%
+    mutate(label = commodity,
+           value = values)
+  
+  A1.1 <- bar_plotly(data_in, 
+                  unique(data_in$variable),
+                  unique(data_in$label),
+                  plot_title = "Consumption in level, baseline scenario",
+                  line = FALSE, unit = "TOE",
+                  y_axis_title = "")%>% 
+    layout(width = 580*0.85,
+           height = 450*0.8,
+           margin = list(autoexpand = FALSE, b = 100, l =80))
+  
+  
+  data_in <- data_sec %>% filter(variable %in% c(paste0("CI_TOE_",bridge_commodities[["C007"]]%>%toupper,"_",sec),
+                                                 paste0("CI_TOE_",bridge_commodities[["C008"]]%>%toupper,"_",sec)),
+                                 scenario == scenario_to_analyse) %>%
+    mutate(value = values,
+           label = commodity)
+  
+  A2.1 <- bar_plotly(data_in, 
+                  unique(data_in$variable),
+                  unique(data_in$label),
+                  plot_title = paste0("Consumption in level, shock scenario: ", scenario_to_analyse),
+                  line = FALSE, unit = "TOE",
+                  y_axis_title = "") %>% 
+    layout(width = 580*0.85,
+           height = 450*0.8,
+           margin = list(autoexpand = FALSE, b = 100, l =80))
+  
+  data_in <- data_sec %>% filter(variable %in% c(paste0("CI_TOE_",bridge_commodities[["C007"]]%>%toupper,"_",sec),
+                                                 paste0("CI_TOE_",bridge_commodities[["C008"]]%>%toupper,"_",sec)),
+                                 scenario == "baseline") %>%
+    group_by(year) %>%
+    mutate(value = values/sum(values),
+           label = commodity) %>% ungroup
+  
+  A1.2 <- bar_plotly(data_in, 
+                  unique(data_in$variable),
+                  unique(data_in$label),
+                  plot_title = "Consumption share, baseline scenario",
+                  line = FALSE, unit = "%",
+                  y_axis_title = "") %>% 
+    layout(width = 580*0.85,
+           height = 450*0.8,
+           margin = list(autoexpand = FALSE, b = 100, l =80))
+  
+  
+  
+  data_in <- data_sec %>% filter(variable %in% c(paste0("CI_TOE_",bridge_commodities[["C007"]]%>%toupper,"_",sec),
+                                                 paste0("CI_TOE_",bridge_commodities[["C008"]]%>%toupper,"_",sec)),
+                                 scenario == scenario_to_analyse) %>%
+    group_by(year) %>%
+    mutate(value = values/sum(values),
+           label = commodity) %>% ungroup
+  
+  A2.2 <- bar_plotly(data_in, 
+                  unique(data_in$variable),
+                  unique(data_in$label),
+                  plot_title = paste0("Consumption share, shock scenario: ", scenario_to_analyse),
+                  line = FALSE, unit = "%",
+                  y_axis_title = "") %>% 
+    layout(width = 580*0.85,
+           height = 450*0.8,
+           margin = list(autoexpand = FALSE, b = 100, l =80))
+  
+  
+  data_in_ener <- data_sec %>% filter(variable %in% c(paste0("CI_TOE_",bridge_commodities[["C007"]]%>%toupper,"_",sec),
+                                                      paste0("CI_TOE_",bridge_commodities[["C008"]]%>%toupper,"_",sec)))
+  
+  A1.3 <- line_plot(data_in_ener, series = unique(data_in_ener$variable),
+                 labels = unique(data_in_ener$commodity),
+                 plot_title = "Consumption in difference from BAU") %>% 
+    layout(width = 580*0.85,
+           height = 450*0.8,
+           margin = list(autoexpand = FALSE, b = 100, l =80))
+  
+  
+  
+  data_in <- data_sec %>% filter(variable %in% c(paste0("PCI_",bridge_commodities[["C007"]]%>%toupper,"_",sec),
+                                                 paste0("PCI_",bridge_commodities[["C008"]]%>%toupper,"_",sec)),
+                                 commodity %in% data_in_ener$commodity)
+  
+  A2.3 <- line_plot(data_in, series = unique(data_in$variable),
+                 labels = unique(data_in$commodity),
+                 plot_title = "Price of energy commodities") %>% 
+    layout(width = 580*0.85,
+           height = 450*0.8,
+           margin = list(autoexpand = FALSE, b = 100, l =80))
+  
+  return(list(A1.1 = A1.1,A1.2 = A1.2,A1.3 = A1.3,
+              A2.1 = A2.1,A2.2 = A2.2,A2.3 = A2.3))
+}
+
+```
+
+```{r}
+#| label: build up energy balance
+
+build_ener_bal <- function(data, years, decimal = 2,
+                           scen = scenario_to_analyse,
+                           primary_energy = NULL,
+                           secondary_energy = NULL,
+                           primary_electricity = NULL,
+                           secondary_electricity = NULL,
+                           coal_sector = NULL,
+                           gas_sector = NULL,
+                           oil_sector = NULL,
+                           thermalelec_sector = NULL,
+                           elec_com = "CELE",
+                           heat_com = "CHEA"){
+  
+  ### Check data.table format
+  data %<>% as.data.table()
+  
+  ### Define necessary variables list
+  ### Classification specific setting
+  if(classification == "c20_s31"){
+   primary_energy <- c("ceog")
+  secondary_energy <- c("coil","cgas")
+  secondary_electricity <- c("sele")
+  coal_sector <- "seog"
+  oil_sector <- "soil"
+  gas_sector <- "sgas"
+  thermalelec_sector <- "sele"
+}
+
+#### For commodity
+### Defaut list in the function:
+if(is.null(primary_energy)){
+  primary_energy <- c("CCOI","CRGA","CBIO","COTE") %>% tolower()
+}
+if(is.null(secondary_energy)){
+  secondary_energy <- c("CCOA","CFUT","CFUH","CDGA") %>% tolower()
+}
+if(is.null(primary_electricity)){
+  primary_electricity <- c("SEWI","SEHY","SESO","SENU","SEOT")  %>% tolower()
+}
+if(is.null(secondary_electricity)){
+  secondary_electricity <- c("SECO","SEOI","SEGA","SECH") %>% tolower()
+}
+
+#### For sector
+if(is.null(coal_sector)){
+  coal_sector <- "SMIN"
+}
+if(is.null(gas_sector)){
+  gas_sector <- c("SPGA","SDGA")
+}
+if(is.null(oil_sector)){
+  oil_sector <- "SOIL"
+}
+if(is.null(thermalelec_sector)){
+  thermalelec_sector <- "^SE[A-Z]{2}"
+}
+
+list_sector <- list(coal_sector = coal_sector %>% tolower,
+                    gas_sector = gas_sector %>% tolower,
+                    oil_sector = oil_sector %>% tolower,
+                    thermalelec_sector = thermalelec_sector %>% tolower) %>%
+  imap(~ filter(names_sectors, grepl(paste0(.x,collapse = "|"),code)) %>%
+         mutate(name_func = .y) %>% as.data.table) %>%
+  reduce(rbind) %>%
+  right_join(names_sectors, by = c("name", "code")) %>%
+  mutate(name_func = fcase(is.na(name_func), "other_sector",
+                           !is.na(name_func), name_func))
+  
+  ### Real list of data base
+  energy_list <- c(bridge_commodities[["C007"]],bridge_commodities[["C008"]])
+  list_primary <- data.frame(code = intersect(primary_energy, energy_list)) %>% 
+    left_join(names_commodities, by = "code")
+  list_secondary <- data.frame(code = intersect(secondary_energy, energy_list)) %>%
+    left_join(names_commodities, by = "code")
+  
+  energy_sector_list <- data.frame(code = c(bridge_sectors[["S007"]],bridge_sectors[["S008"]])) %>% 
+    left_join(names_sectors, by = "code")
+  list_primary_elec <- data.frame(code = intersect(primary_electricity, energy_sector_list$code)) %>% 
+    left_join(names_sectors, by = "code")
+  list_secondary_elec <- data.frame(code = intersect(secondary_electricity, energy_sector_list$code)) %>% 
+    left_join(names_sectors, by = "code")
+  
+  
+  ### Total primary energy supply
+  
+data_supply <- data %>%
+  filter(grepl("^YG_TOE_C[A-Z]{3}$|^MG_TOE_C[A-Z]{3}$|^X_TOE_C[A-Z]{3}$",variable) |
+           variable %in% paste0("YG_TOE_",elec_com,"_", list_primary_elec$code%>%toupper)|
+           variable %in% paste0("YG_TOE_",heat_com,"_", list_primary_elec$code%>%toupper),
+         variable != paste0("YG_TOE_",elec_com),
+         variable != paste0("YG_TOE_",heat_com),
+         year == years) %>%
+  #long_input() %>%
+  #as.data.table %>%
+  filter(scenario %in% c(scen)) %>%
+  mutate(variable = str_remove_all(variable, "_TOE_C[A-Z]{3}"),
+         values = fcase(variable == "X" , -values,
+                        variable != "X"& variable != "YG", values,
+                        variable == "YG" & commodity %in% list_primary$name, values,
+                        variable == "YG" & commodity %in% list_secondary$name, 0)) %>%
+  left_join(.[, sum(values, na.rm = TRUE), keyby = commodity]%>%set_names(c("commodity","TPES")), by = "commodity") %>%
+  dcast.data.table(commodity + year + TPES ~ variable, value.var = "values") %>%
+  melt.data.table(id.vars = c("year","commodity"), variable.name = "variable", value.name = "values") %>%
+  mutate(values = case_when(
+    values != 0~ round(values,decimal),
+    values == 0~ NA)) %>%
+  dcast.data.table(variable ~ commodity, value.var = "values")
+
+data_supply$variable <- factor(data_supply$variable, 
+                               levels = c("YG",paste0("YG_",list_primary_elec$code%>%toupper),"MG","X","TPES"))
+
+data_supply %<>% dplyr::arrange(variable) %>%
+  left_join(data.table(V1 = c("YG",paste0("YG_",list_primary_elec$code%>%toupper),"MG","X","TPES"),
+                       V2 = c("Production",
+                              paste0(list_primary_elec$name %>% str_remove_all(" electricity generation")," "),
+                              "Imports","Exports","TPES")) %>%
+              set_colnames(c("variable","Supply and consumption")),
+            by = "variable") %>% select(-variable)
+
+  
+  ### Energy transformation
+
+  data_trans <- data %>%
+    filter(grepl(paste0("^CI_TOE_",c(list_primary$code,list_secondary$code, elec_com, heat_com)%>%toupper(),
+                        "_S[A-Z]{3}$",collapse = "|"),variable)|
+             grepl(paste0("^YG_TOE_",list_secondary$code%>%toupper(),"_S[A-Z]{3}$",collapse = "|"),variable)| 
+             grepl(paste0("^CI_TOE_C[A-Z]{3}_",list_secondary_elec$code%>%toupper,collapse = "|"),variable)|
+             grepl(paste0("^YG_TOE_",elec_com,"_",list_secondary_elec$code%>%toupper,collapse = "|"),variable)|
+             grepl(paste0("^YG_TOE_",heat_com,"_",list_secondary_elec$code%>%toupper,collapse = "|"),variable)|
+             grepl("^AC_TOE_C[A-Z]{3}$|^DL_TOE_C[A-Z]{3}$",variable),
+           sector %in% energy_sector_list$name | is.na(sector),
+           year == years) %>%
+    filter(scenario %in% c(scen)) %>%
+    left_join(list_sector %>% select(-code), by = c("sector" = "name")) %>%
+    mutate(
+      values = fcase(
+        str_detect(variable, "^YG"), values,
+        !str_detect(variable, "^YG"), -values),
+      variable = fcase(
+        str_detect(variable, "^AC.*|^DL.*"), str_remove_all(variable, "_TOE_C[A-Z]{3}"),
+        name_func == "coal_sector", "SMIN",
+        name_func == "oil_sector", "SOIL",
+        name_func == "thermalelec_sector", "SELE",
+        name_func == "gas_sector", "SGAS",
+        name_func == "other_sector", "SOTH"
+      )
+    ) %>%
+    left_join(.[, sum(values), keyby = commodity] %>% set_names(c("commodity","TT")), by = "commodity") %>%
+    dcast.data.table(commodity + year + TT ~ variable, value.var = "values", fun.aggregate = sum, fill = NA) %>%
+    melt.data.table(id.vars = c("year", "commodity"), variable.name = "variable", value.name = "values") %>%
+    mutate(values = case_when(
+      values != 0~ round(values,decimal),
+      values == 0~ NA)) %>%
+    dcast.data.table(variable ~ commodity, value.var = "values")
+  
+  data_trans$variable <- factor(data_trans$variable, 
+                                levels = c("SMIN","SOIL","SGAS","SELE","SOTH","AC","DL","TT"))
+  
+  data_trans %<>% dplyr::arrange(variable) %>%
+    left_join(data.table(V1 = c("SMIN","SOIL","SGAS","SELE","SOTH","AC","DL","TT"),
+                         V2 = c("Coal wahsing","Oil refineries","Gas works",
+                                "Elec. generation","Other transf.","Auto-consumption",
+                                "Distribution losses","Total transf.")) %>%
+                set_colnames(c("variable","Supply and consumption")),
+              by = "variable") %>% select(-variable)
+  
+  ### Total final consumption
+  
+  data_use <- data %>%
+    filter(grepl("^CH_TOE_C[A-Z]{3}$",variable)|
+             grepl("^CI_TOE_C[A-Z]{3}_S[A-Z]{3}$",variable),
+           !grepl(paste0("^CI_TOE_C[A-Z]{3}_",energy_sector_list$code %>% toupper, collapse = "|"),variable),
+           year == years) %>%
+    filter(scenario %in% c(scen)) %>%
+    mutate(
+      variable = case_when(
+        str_detect(variable, "^CH.*") ~ "CH",
+        str_detect(variable, paste0(".*", c(bridge_sectors[["S002"]], bridge_sectors[["S003"]])%>%toupper(),
+                                    collapse = "|")) ~ "SIND",
+        str_detect(variable, paste0(".*", bridge_sectors[["S005"]]%>%toupper(), collapse = "|")) ~ "STRP",
+        !str_detect(variable, paste0(".*", c(bridge_sectors[["S002"]],
+                                             bridge_sectors[["S003"]],
+                                             bridge_sectors[["S005"]])%>%toupper(),collapse = "|")) ~ "SOTH"))%>%
+    left_join(.[, sum(values), keyby = commodity] %>% set_names(c("commodity","TFC")), by = "commodity") %>%
+    dcast.data.table(commodity + year + TFC ~ variable, value.var = "values", fun.aggregate = sum, fill = NA) %>%
+    melt.data.table(id.vars = c("year", "commodity"), variable.name = "variable", value.name = "values") %>%
+    mutate(values = case_when(
+      values != 0~ round(values,decimal),
+      values == 0~ NA)) %>%
+    dcast.data.table(variable ~ commodity, value.var = "values")
+  
+  data_use$variable <- factor(data_use$variable, levels = c("TFC","CH","SIND","STRP","SOTH"))
+  
+  data_use %<>% dplyr::arrange(variable) %>%
+    left_join(data.table(V1 = c("TFC","CH","SIND","STRP","SOTH"),
+                         V2 = c("TFC","Households","Industries",
+                                "Transports","Others")) %>%
+                set_colnames(c("variable","Supply and consumption")),
+              by = "variable") %>% select(-variable)
+  
+  
+  ### Energy balance
+  
+  energy_balance <- rbind(data_supply, data_trans, data_use)
+  
+  return(list(energy_balance, data_supply, data_trans, data_use))
+}
+
+## Sankey diagram of energy flow
+
+sankey_energy_threeme <- function(ener_bal = energy_balance){
+
+## list of nodes
+list_node <- rbind(
+  data.frame(label_node = c("Imports","Production",
+               "Total primairy energy supply",
+               "Exports","Direct carry-over","Transf. input",
+               "Transf. output",
+               "Transf. loss","Total final consumption","Distribution losses"),
+             x_position = c(0.05,0.05,
+                            0.2,
+                            0.35,0.35,0.35,
+                            0.65,
+                            0.8,0.8,1.0),
+             y_position = c(0.4,0.55,
+                            0.5,
+                            0.3,0.4,0.55,
+                            0.6,
+                            0.8,0.5,0.35)+0.05),
+  
+  data.frame(label_node = c(ener_bal[[3]]$`Supply and consumption`,"Exports")) %>% 
+    filter(!(label_node %in% c("Total transf.","Exports","Distribution losses"))) %>%
+    mutate(x_position = 0.5,
+           y_position = 0.55+0.05),
+  
+  ener_bal[[4]] %>%
+    filter(`Supply and consumption` != "TFC") %>%
+    transmute(label_node = `Supply and consumption`) %>%
+    mutate(x_position = 1.0,
+           y_position = 0.35+0.05)) %>%
+  mutate(num_node = c(1:length(label_node))-1)
+
+## part 1 : from node$Import to node$TPES
+part_1 <- ener_bal[[2]] %>%
+  filter(`Supply and consumption` == "Imports") %>%
+  pivot_longer(-`Supply and consumption`, names_to = "energy", values_to = "values") %>%
+  transmute(source = `Supply and consumption`,
+            values = values,
+            energy = energy,
+            target = "Total primairy energy supply")
+
+## part 2 : from node$Production to node$TPES
+part_2 <- ener_bal[[2]] %>%
+  filter(!(`Supply and consumption` %in% c("Imports","Exports","TPES"))) %>%
+  pivot_longer(-`Supply and consumption`, names_to = "energy", values_to = "values") %>%
+  transmute(energy = case_when(
+    !(energy %in% c("Heat","Electricity")) ~ energy,
+    energy %in% c("Heat","Electricity") ~ `Supply and consumption`),
+    source = "Production",
+    values = values,
+    target = "Total primairy energy supply") %>%
+  group_by(energy, source) %>%
+  mutate(values = sum(values, na.rm = TRUE)) %>%
+  ungroup() %>% unique()
+    
+## part 3 : from node$TPES to node$Exports
+part_3 <- ener_bal[[2]] %>%
+  filter(`Supply and consumption` == "Exports") %>%
+  pivot_longer(-`Supply and consumption`, names_to = "energy", values_to = "values") %>%
+  transmute(source = "Total primairy energy supply",
+            values = -values,
+            energy = energy,
+            target = `Supply and consumption`)
+
+## part 4 : from node$TPES to node$DCO
+  
+part_4_a <- ener_bal[[2]] %>%
+  filter(!(`Supply and consumption` %in% c("TPES"))) %>%
+  pivot_longer(-`Supply and consumption`, names_to = "energy", values_to = "values") %>%
+  group_by(energy) %>%
+  transmute(values = sum(values, na.rm = TRUE),
+            energy = energy) %>%
+  ungroup() %>%
+  unique()
+
+part_4_b <- ener_bal[[3]] %>%
+  filter(!(`Supply and consumption` %in% c("Total transf.","Distribution losses"))) %>%
+  pivot_longer(-`Supply and consumption`, names_to = "energy", values_to = "values") %>%
+  filter(values < 0) %>%
+  group_by(energy) %>%
+  transmute(values = sum(values, na.rm = TRUE),
+            energy = energy) %>%
+  ungroup() %>%
+  unique()
+
+part_4 <- left_join(part_4_a, part_4_b, by = "energy") %>%
+  transmute(energy = energy,
+            values = values.x + values.y) %>%
+  mutate(values = case_when(
+    abs(values) < 1e-6 ~ 0,
+    abs(values) >= 1e-7 ~ values))
+
+sec_non_input <- filter(part_4, values<0)$energy
+
+part_4 %<>% left_join(part_4_a%>%filter(energy %in% sec_non_input), by = "energy") %>%
+  transmute(values = case_when(
+    values.x < 0 ~ values.y,
+    values.x >= 0 ~ values.x),
+    source = "Total primairy energy supply",
+    target = "Direct carry-over",
+    energy = energy
+  )
+
+### part 5 : from node$TPES to node$Transf. input
+part_5 <- ener_bal[[3]] %>%
+  filter(!(`Supply and consumption` %in% c("Distribution losses","Total transf."))) %>%
+  pivot_longer(-`Supply and consumption`, names_to = "energy", values_to = "values") %>%
+  filter(values < 0) %>%
+  left_join(left_join(part_4_a, part_4_b, by = "energy") %>%
+              transmute(energy = energy,
+                        values = values.x + values.y) %>%
+              mutate(values = case_when(
+                abs(values) < 1e-5 ~ 0,
+                abs(values) >= 1e-5 ~ values)) %>%
+              filter(values >= 0), by = "energy") %>%
+  filter(!is.na(values.y)) %>%
+  group_by(energy) %>%
+  transmute(
+    values = -sum(values.x),
+    energy = energy,
+    source = "Total primairy energy supply",
+    target = "Transf. input"
+  ) %>%
+  ungroup() %>%
+  unique()
+
+### part 6 : from node$Transf.output to node$Transf.input
+# part_6_a <- ener_bal[[3]] %>%
+#   filter(`Supply and consumption` == "Auto-consumption") %>%
+#   pivot_longer(-`Supply and consumption`, names_to = "energy", values_to = "values") %>%
+#   filter(values < 0) %>%
+#   transmute(
+#     values = -values,
+#     energy = energy,
+#     source = "Transf. output",
+#     target = "Transf. input"
+#   )
+
+part_6 <- ener_bal[[3]] %>%
+  filter(!(`Supply and consumption` %in% c("Auto-consumption","Distribution losses","Total transf."))) %>%
+  pivot_longer(-`Supply and consumption`, names_to = "energy", values_to = "values") %>%
+  filter(values < 0,
+         energy %in% sec_non_input) %>%
+  group_by(energy) %>%
+  transmute(
+    values = -sum(values),
+    energy = energy,
+    source = "Transf. output",
+    target = "Transf. input"
+  ) %>% ungroup() %>% unique()
+  
+
+### part 7 : from node$Transf.input to node$technologies
+part_7 <- ener_bal[[3]] %>%
+  filter(!(`Supply and consumption` %in% c("Distribution losses","Total transf."))) %>%
+  pivot_longer(-`Supply and consumption`, names_to = "energy", values_to = "values") %>%
+  filter(values < 0) %>%
+  transmute(
+    values = -values,
+    energy = energy,
+    source = "Transf. input",
+    target = `Supply and consumption`
+  )
+  
+### part 8 : from node$technologies to node$Transf.output
+
+part_8 <- ener_bal[[3]] %>%
+  filter(!(`Supply and consumption` %in% c("Distribution losses","Total transf."))) %>%
+  pivot_longer(-`Supply and consumption`, names_to = "energy", values_to = "values") %>%
+  filter(values > 0) %>%
+  transmute(
+    values = values,
+    energy = energy,
+    source = `Supply and consumption`,
+    target = "Transf. output"
+  )
+
+### part 9 : from node$Transf.output to node$auto_consumption
+# part_9 <- ener_bal[[3]] %>%
+#   filter(`Supply and consumption` == "Auto-consumption") %>%
+#   pivot_longer(-`Supply and consumption`, names_to = "energy", values_to = "values") %>%
+#   filter(values < 0) %>%
+#   transmute(
+#     values = -values,
+#     energy = energy,
+#     source = "Transf. output",
+#     target = `Supply and consumption`
+#   )
+
+### part 10 : from node$Transf.output to node$Transf.loss
+part_10 <- part_5 %>%
+  mutate(values = sum(values),
+         energy = "Losses",
+         source = "Transf. output",
+         target = "Transf. loss") %>% 
+  unique() %>%
+  rbind(part_8 %>%
+          mutate(values = -sum(values),
+                 energy = "Losses",
+                 source = "Transf. output",
+                 target = "Transf. loss") %>% 
+          unique()) %>%
+  mutate(values = sum(values)) %>% unique()
+
+
+### part 11 : from node$Transf.output to node$TFC
+part_11 <- part_8 %>%
+  left_join(part_6, by = "energy") %>%
+  mutate(values.y = case_when(
+    is.na(values.y) ~ 0,
+    !is.na(values.y) ~ values.y
+  )) %>%
+  transmute(
+    values = values.x - values.y,
+    energy = energy,
+    source = "Transf. output",
+    target = "Total final consumption")
+
+### part 12 : from node$DOC to node$TFC
+part_12 <- part_4 %>%
+  mutate(source = "Direct carry-over",
+         target = "Total final consumption")
+
+### part 13 : from node$TFC to node$final users
+part_13 <- ener_bal[[4]] %>%
+  filter(`Supply and consumption` != "TFC") %>%
+  rbind(ener_bal[[3]] %>% filter(`Supply and consumption` == "Distribution losses")) %>%
+  pivot_longer(-`Supply and consumption`, names_to = "energy", values_to = "values") %>%
+  mutate(values = case_when(
+    values < 0 ~ -values,
+    values >= 0 ~ values
+  )) %>%
+  filter(!is.na(values)) %>%
+  transmute(
+    values = values,
+    energy = energy,
+    source = "Total final consumption",
+    target = `Supply and consumption`
+  )
+  
+## list of energies
+
+list_link <- rbind(part_1,part_2,part_3,part_4,part_5,part_6,part_7,part_8,#part_9,
+                   part_10,part_11,part_12,part_13) %>%
+  filter(values > 0) %>%
+  left_join(list_node, by = c("source" = "label_node")) %>%
+  transmute(values = values,
+            source = num_node,
+            target = target,
+            energy = energy) %>%
+  left_join(list_node, by = c("target" = "label_node")) %>%
+  transmute(values = values,
+            source = source,
+            target = num_node,
+            energy = energy)
+
+ list_link %<>%
+  left_join(list_link %>%
+              select(energy) %>%
+              unique() %>%
+              mutate(color = paletteer::paletteer_d("ggsci::springfield_simpsons", n = nrow(.))), by = "energy")
+
+fig <- plot_ly(
+  type = "sankey",
+  arrangement = "snap",
+  valueformat = ".2f",
+  valuesuffix = "TOE",
+  node = list(
+    label = list_node$label_node,
+    color = "black",
+    x = list_node$x_position,
+    y = list_node$y_position,
+    pad = 20,
+    thickness = 15
+  ),
+  link = list(
+    source = list_link$source,
+    target = list_link$target,
+    value =  list_link$values,
+    color = list_link$color,
+    customdata = list_link$energy,
+    hovertemplate = paste0(
+      "<b>%{customdata}</b><br>")#,
+      # "From: %{source.label}",
+      # "<br>To: %{target.label}")
+  )
+)
+
+fig <- fig %>% layout(
+  font = list(
+    size = 10)
+)
+
+### Adding legend for energies
+list_legend <- list_link %>% select(energy, color) %>% unique()
+for (i in list_legend$energy) {
+  
+  data_in <- list_legend %>% filter(energy == i)
+  fig %<>% add_trace(
+    data = data_in,
+    mode = "markers",
+    type = "scatter",
+    #visible = "legendonly",
+    x = 0,
+    y = 0,
+    name = ~energy,
+    marker = list(color = data_in$color, size = 15, symbol="square")
+  )
+}
+
+fig %<>% layout(showlegend = TRUE,
+                xaxis = list(visible = FALSE),
+                yaxis = list(visible = FALSE)
+)
+
+return(fig)
+}
+
+
+
+```
+
+# Energy balance
+## Energy balance {.scrollable}
+
+```{r}
+#| label: Definition of energy list related to classification
+
+if(classification == "c20_s31"){
+  col_keys <- c("Supply and consumption","Extraction of oil and gas","Refined oil & coal","Gas","Electricity","Other energy")
+  i_bg <- c(4,11,12)
+  i_hline <- c(9,11,16)
+}
+if(classification == "c29_s33"){
+  col_keys <- c("Supply and consumption","Coal and coal products","Crude oil",
+                       "Heating fuel","Transport fuels","Raw natural gas","Distributed natural gas",
+                       "Electricity","Heat",
+                       "Biomass","Other energy")
+  i_bg <- c(9,17,18)
+  i_hline <- c(9,17,22)
+}
+```
+
+::: panel-tabset
+
+### Baseyear
+```{r}
+#| label: tbl_energy_balance_1
+#| results: asis
+#| tbl-cap:  Energy balance
+
+ener_bal_1 <- build_ener_bal(data_full, startyear)
+
+tbl <- flextable(ener_bal_1[[1]],
+          col_keys = col_keys) %>%
+  autofit %>%
+  bg(i = i_bg,
+     bg = plot_header, part = "body") %>%
+  bg(bg = plot_header, part = "head") %>%
+  hline(part="all") %>%
+  hline(i = i_hline, border = fp_border(color = "black", style = "solid", width = 1.5)) %>%
+  hline(border = fp_border(color = "black", style = "solid", width = 1.5), part = "head") %>%
+  width(j = 1, width = 1.5)
+
+tbl
+
+```
+
+### Baseyear + 5
+```{r}
+#| label: tbl_energy_balance_2
+#| results: asis
+#| tbl-cap: Energy balance
+
+ener_bal_2 <- build_ener_bal(data_full, startyear+5)
+
+tbl <- flextable(ener_bal_2[[1]],
+          col_keys = col_keys) %>%
+  autofit %>%
+  bg(i = i_bg,
+     bg = plot_header, part = "body") %>%
+  bg(bg = plot_header, part = "head") %>%
+  hline(part="all") %>%
+  hline(i = i_hline, border = fp_border(color = "black", style = "solid", width = 1.5)) %>%
+  hline(border = fp_border(color = "black", style = "solid", width = 1.5), part = "head") %>%
+  width(j = 1, width = 1.5)
+
+tbl
+
+```
+
+### Baseyear + 10
+```{r}
+#| label: tbl_energy_balance_3
+#| results: asis
+#| tbl-cap: Energy balance
+
+ener_bal_3 <- build_ener_bal(data_full, startyear+11)
+
+tbl <- flextable(ener_bal_3[[1]],
+          col_keys = col_keys) %>%
+  autofit %>%
+  bg(i = i_bg,
+     bg = plot_header, part = "body") %>%
+  bg(bg = plot_header, part = "head") %>%
+  hline(part="all") %>%
+  hline(i = i_hline, border = fp_border(color = "black", style = "solid", width = 1.5)) %>%
+  hline(border = fp_border(color = "black", style = "solid", width = 1.5), part = "head") %>%
+  width(j = 1, width = 1.5)
+
+tbl
+
+```
+
+### Baseyear + 20
+```{r}
+#| label: tbl_energy_balance_4
+#| results: asis
+#| tbl-cap: Energy balance
+
+ener_bal_4 <- build_ener_bal(data_full, startyear+20)
+
+tbl <- flextable(ener_bal_4[[1]],
+          col_keys = col_keys) %>%
+  autofit %>%
+  bg(i = i_bg,
+     bg = plot_header, part = "body") %>%
+  bg(bg = plot_header, part = "head") %>%
+  hline(part="all") %>%
+  hline(i = i_hline, border = fp_border(color = "black", style = "solid", width = 1.5)) %>%
+  hline(border = fp_border(color = "black", style = "solid", width = 1.5), part = "head") %>%
+  width(j = 1, width = 1.5)
+
+tbl
+```
+
+### Long term
+```{r}
+#| label: tbl_energy_balance_5
+#| results: asis
+#| tbl-cap: Energy balance
+
+ener_bal_5 <- build_ener_bal(data_full, endyear)
+
+tbl <- flextable(ener_bal_5[[1]],
+          col_keys = col_keys) %>%
+  autofit %>%
+  bg(i = i_bg,
+     bg = plot_header, part = "body") %>%
+  bg(bg = plot_header, part = "head") %>%
+  hline(part="all") %>%
+  hline(i = i_hline, border = fp_border(color = "black", style = "solid", width = 1.5)) %>%
+  hline(border = fp_border(color = "black", style = "solid", width = 1.5), part = "head") %>%
+  width(j = 1, width = 1.5)
+
+tbl
+```
+
+:::
+::: {.footer}
+
+Scenario: **`r params$scenario_to_analyse %>% toupper()`**
+
+:::
+
+## Energy flow
+
+::: panel-tabset
+
+### Baseyear
+<center>
+```{r}
+#| label: flow_1
+#| results: asis
+#| fig-width: 14
+#| fig-height: 6
+
+sankey_energy_threeme(ener_bal_1)
+
+```
+</center>
+
+### Baseyear + 5
+<center>
+```{r}
+#| label: flow_2
+#| results: asis
+#| fig-width: 14
+#| fig-height: 6
+
+sankey_energy_threeme(ener_bal_2)
+
+```
+</center>
+
+### Baseyear + 10
+<center>
+```{r}
+#| label: flow_3
+#| results: asis
+#| fig-width: 14
+#| fig-height: 6
+
+sankey_energy_threeme(ener_bal_3)
+
+```
+</center>
+
+### Baseyear + 20
+<center>
+```{r}
+#| label: flow_4
+#| results: asis
+#| fig-width: 14
+#| fig-height: 6
+
+sankey_energy_threeme(ener_bal_4)
+
+```
+</center>
+
+### Long term
+<center>
+```{r}
+#| label: flow_5
+#| results: asis
+#| fig-width: 14
+#| fig-height: 6
+
+sankey_energy_threeme(ener_bal_5)
+
+```
+</center>
+
+:::
+::: {.footer}
+
+Scenario: **`r params$scenario_to_analyse %>% toupper()`**
+
+:::
+
+# Energy supply
+
+## Domestical production
+
+:::: {.panel-tabset}
+
+### Level
+::: columns 
+
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: energy production in level (BAU)
+#| results: asis
+
+data_in <- data_full %>% filter(variable %in% c(paste0("Y_TOE_",bridge_commodities[["C007"]]%>%toupper),
+                                                paste0("Y_TOE_",bridge_commodities[["C008"]]%>%toupper)),
+                                scenario == "baseline") %>%
+  mutate(value = values, label = commodity)
+
+A <- bar_plotly(data_in, 
+                unique(data_in$variable),
+                unique(data_in$commodity),
+                plot_title = "Baseline scenario",
+                line = FALSE, unit = "TOE",
+                y_axis_title = "")
+A
+
+```
+</center>
+:::
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: energy production in level (shock)
+#| results: asis
+
+data_in <- data_full %>% filter(variable %in% c(paste0("Y_TOE_",bridge_commodities[["C007"]]%>%toupper),
+                                                paste0("Y_TOE_",bridge_commodities[["C008"]]%>%toupper)),
+                                scenario == scenario_to_analyse) %>%
+  mutate(value = values, label = commodity)
+
+A <- bar_plotly(data_in, 
+                unique(data_in$variable),
+                unique(data_in$commodity),
+                plot_title = paste0("Shock scenario: ", scenario_to_analyse),
+                line = FALSE, unit = "TOE",
+                y_axis_title = "")
+A
+
+```
+</center>
+:::
+:::
+
+### Difference
+::: columns 
+
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: energy production in difference
+#| results: asis
+
+data_in <- data_full %>% filter(variable %in% c(paste0("Y_TOE_",bridge_commodities[["C007"]]%>%toupper),
+                                                paste0("Y_TOE_",bridge_commodities[["C008"]]%>%toupper)))
+A <- line_plot(data_in, series = unique(data_in$variable),
+               labels = unique(data_in$commodity),
+               plot_title = "Energy production")
+A
+
+```
+</center>
+:::
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: energy production price in difference
+#| results: asis
+
+data_in <- data_full %>% filter(variable %in% c(paste0("PYQ_",bridge_commodities[["C007"]]%>%toupper),
+                                                paste0("PYQ_",bridge_commodities[["C008"]]%>%toupper)))
+A <- line_plot(data_in, series = unique(data_in$variable),
+               labels = unique(data_in$commodity),
+               plot_title = "Energy production price")
+A
+```
+</center>
+:::
+:::
+### Share
+::: columns 
+
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: energy production share (BAU)
+#| results: asis
+
+data_in <- data_full %>% filter(variable %in% c(paste0("Y_TOE_",bridge_commodities[["C007"]]%>%toupper),
+                                                paste0("Y_TOE_",bridge_commodities[["C008"]]%>%toupper)),
+                                scenario == "baseline") %>%
+  group_by(year) %>%
+  mutate(value = values/sum(values), label = commodity) %>% ungroup
+
+A <- bar_plotly(data_in, 
+                unique(data_in$variable),
+                unique(data_in$commodity),
+                plot_title = "Baseline scenario",
+                line = FALSE, unit = "%",
+                y_axis_title = "")
+A
+
+```
+</center>
+:::
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: energy production share (shock)
+#| results: asis
+
+data_in <- data_full %>% filter(variable %in% c(paste0("Y_TOE_",bridge_commodities[["C007"]]%>%toupper),
+                                                paste0("Y_TOE_",bridge_commodities[["C008"]]%>%toupper)),
+                                scenario == scenario_to_analyse) %>%
+  group_by(year) %>%
+  mutate(value = values/sum(values), label = commodity) %>% ungroup
+
+
+A <- bar_plotly(data_in, 
+                unique(data_in$variable),
+                unique(data_in$commodity),
+                plot_title = paste0("Shock scenario: ", scenario_to_analyse),
+                line = FALSE, unit = "%",
+                y_axis_title = "")
+A
+
+```
+</center>
+:::
+:::
+
+::::
+::: {.footer}
+
+Scenario: **`r params$scenario_to_analyse %>% toupper()`**
+
+:::
+## Imports
+:::: {.panel-tabset}
+### Level
+::: columns 
+
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: energy import in level (BAU)
+#| results: asis
+
+data_in <- data_full %>% filter(variable %in% c(paste0("M_TOE_",bridge_commodities[["C007"]]%>%toupper),
+                                                paste0("M_TOE_",bridge_commodities[["C008"]]%>%toupper)),
+                                scenario == "baseline") %>%
+  mutate(value = values, label = commodity)
+
+A <- bar_plotly(data_in, 
+                unique(data_in$variable),
+                unique(data_in$commodity),
+                plot_title = "Baseline scenario",
+                line = FALSE, unit = "TOE",
+                y_axis_title = "")
+A
+
+```
+</center>
+:::
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: energy import in level (shock)
+#| results: asis
+
+data_in <- data_full %>% filter(variable %in% c(paste0("M_TOE_",bridge_commodities[["C007"]]%>%toupper),
+                                                paste0("M_TOE_",bridge_commodities[["C008"]]%>%toupper)),
+                                scenario == scenario_to_analyse) %>%
+  mutate(value = values, label = commodity)
+
+A <- bar_plotly(data_in, 
+                unique(data_in$variable),
+                unique(data_in$commodity),
+                plot_title = paste0("Shock scenario: ", scenario_to_analyse),
+                line = FALSE, unit = "TOE",
+                y_axis_title = "")
+A
+
+```
+</center>
+:::
+:::
+
+### Difference
+::: columns 
+
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: energy imports in difference
+#| results: asis
+
+data_in <- data_full %>% filter(variable %in% c(paste0("M_TOE_",bridge_commodities[["C007"]]%>%toupper),
+                                                paste0("M_TOE_",bridge_commodities[["C008"]]%>%toupper)))
+A <- line_plot(data_in, series = unique(data_in$variable),
+               labels = unique(data_in$commodity),
+               plot_title = "Energy imports")
+A
+
+```
+</center>
+:::
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: energy imports price in difference
+#| results: asis
+
+data_in <- data_full %>% filter(variable %in% c(paste0("PM_",bridge_commodities[["C007"]]%>%toupper),
+                                                paste0("PM_",bridge_commodities[["C008"]]%>%toupper)))
+A <- line_plot(data_in, series = unique(data_in$variable),
+               labels = unique(data_in$commodity),
+               plot_title = "Energy imports price")
+A
+```
+</center>
+:::
+:::
+
+### Share
+::: columns 
+
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: energy import share (BAU)
+#| results: asis
+
+data_in <- data_full %>% filter(variable %in% c(paste0("M_TOE_",bridge_commodities[["C007"]]%>%toupper),
+                                                paste0("M_TOE_",bridge_commodities[["C008"]]%>%toupper)),
+                                scenario == "baseline") %>%
+  group_by(year) %>%
+  mutate(value = values/sum(values), label = commodity) %>% ungroup
+
+A <- bar_plotly(data_in, 
+                unique(data_in$variable),
+                unique(data_in$commodity),
+                plot_title = "Baseline scenario",
+                line = FALSE, unit = "%",
+                y_axis_title = "")
+A
+
+```
+</center>
+:::
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: energy import share (shock)
+#| results: asis
+
+data_in <- data_full %>% filter(variable %in% c(paste0("M_TOE_",bridge_commodities[["C007"]]%>%toupper),
+                                                paste0("M_TOE_",bridge_commodities[["C008"]]%>%toupper)),
+                                scenario == scenario_to_analyse) %>%
+  group_by(year) %>%
+  mutate(value = values/sum(values), label = commodity) %>% ungroup
+
+
+A <- bar_plotly(data_in, 
+                unique(data_in$variable),
+                unique(data_in$commodity),
+                plot_title = paste0("Shock scenario: ", scenario_to_analyse),
+                line = FALSE, unit = "%",
+                y_axis_title = "")
+A
+
+```
+</center>
+:::
+:::
+
+::::
+::: {.footer}
+
+Scenario: **`r params$scenario_to_analyse %>% toupper()`**
+
+:::
+## Electricity generation
+Electricity mix in ThreeME model is exogenous, depending on data on the base year by default.
+
+:::: {.panel-tabset}
+### Level
+::: columns 
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: Elec. generation in level (BAU)
+#| results: asis
+
+elec_sec <- variables_like(data_full, "^Y_TOE_SE[A-Z0-9]{2}$", view = FALSE)
+
+data_in <- data_full %>% filter(variable %in% elec_sec,
+                                scenario == "baseline") %>%
+  mutate(value = values, label = sector)
+
+A <- bar_plotly(data_in, 
+                unique(data_in$variable),
+                str_remove(str_remove(unique(data_in$sector), pattern = "electricity generation"), " and other heat supply"),
+                plot_title = "Baseline scenario",
+                line = FALSE, unit = "TOE",
+                y_axis_title = "")
+A
+
+```
+</center>
+:::
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: Elec. generation in level (shock)
+#| results: asis
+
+
+elec_sec <- variables_like(data_full, "^Y_TOE_SE[A-Z0-9]{2}$", view = FALSE)
+
+data_in <- data_full %>% filter(variable %in% elec_sec,
+                                scenario == scenario_to_analyse) %>%
+  mutate(value = values, label = sector)
+
+A <- bar_plotly(data_in, 
+                unique(data_in$variable),
+                str_remove(str_remove(unique(data_in$sector), pattern = "electricity generation"), " and other heat supply"),
+                plot_title = paste0("Shock scenario: ", scenario_to_analyse),
+                line = FALSE, unit = "TOE",
+                y_axis_title = "")
+A
+
+```
+</center>
+:::
+:::
+
+### Share
+::: columns 
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: Elec. generation share (BAU)
+#| results: asis
+
+elec_sec <- variables_like(data_full, "^Y_TOE_SE[A-Z0-9]{2}$", view = FALSE)
+
+data_in <- data_full %>% filter(variable %in% elec_sec,
+                                scenario == "baseline") %>%
+  group_by(year) %>%
+  mutate(value = values/sum(values), label = sector) %>% ungroup()
+
+A <- bar_plotly(data_in, 
+                unique(data_in$variable),
+                str_remove(str_remove(unique(data_in$sector), pattern = "electricity generation"), " and other heat supply"),
+                plot_title = "Baseline scenario",
+                line = FALSE, unit = "%",
+                y_axis_title = "")
+A
+
+```
+</center>
+:::
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: Elec. generation share (shock)
+#| results: asis
+
+
+elec_sec <- variables_like(data_full, "^Y_TOE_SE[A-Z0-9]{2}$", view = FALSE)
+
+data_in <- data_full %>% filter(variable %in% elec_sec,
+                                scenario == scenario_to_analyse) %>%
+  group_by(year) %>%
+  mutate(value = values/sum(values), label = sector) %>% ungroup()
+
+A <- bar_plotly(data_in, 
+                unique(data_in$variable),
+                str_remove(str_remove(unique(data_in$sector), pattern = "electricity generation"), " and other heat supply"),
+                plot_title = paste0("Shock scenario: ", scenario_to_analyse),
+                line = FALSE, unit = "%",
+                y_axis_title = "")
+A
+
+```
+</center>
+:::
+:::
+
+
+::::
+::: {.footer}
+
+Scenario: **`r params$scenario_to_analyse %>% toupper()`**
+
+:::
+# Energy consumption
+
+## Inter-sectors
+
+Here shows the total energy consumption for each ThreeME sector
+
+:::: {.panel-tabset}
+### Level
+::: columns 
+
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: energy consumption by sectors in level (BAU)
+#| results: asis
+
+data_in <- data_sec %>% filter(variable %in% variables_like(., "^CI_TOE_S[0-9]{3}$", view = FALSE),
+                               scenario == "baseline") %>%
+  mutate(value = values,
+         label = sector)
+
+A <- bar_plotly(data_in, 
+                unique(data_in$variable),
+                unique(data_in$label),
+                plot_title = "Baseline scenario",
+                line = FALSE, unit = "TOE",
+                y_axis_title = "")
+A
+
+```
+</center>
+:::
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: energy consumption by sectors in level (shock)
+#| results: asis
+
+data_in <- data_sec %>% filter(variable %in% variables_like(., "^CI_TOE_S[0-9]{3}$", view = FALSE),
+                               scenario == scenario_to_analyse) %>%
+  mutate(value = values,
+         label = sector)
+
+A <- bar_plotly(data_in, 
+                unique(data_in$variable),
+                unique(data_in$label),
+                plot_title = paste0("Shock scenario: ", scenario_to_analyse),
+                line = FALSE, unit = "TOE",
+                y_axis_title = "")
+A
+
+```
+</center>
+:::
+:::
+
+### Difference
+::: columns 
+
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: energy consumption by sectors in difference
+#| results: asis
+
+data_in <- data_sec %>% filter(variable %in% variables_like(., "^CI_TOE_S[0-9]{3}$", view = FALSE))
+
+A <- line_plot(data_in, series = unique(data_in$variable),
+               labels = unique(data_in$sector),
+               plot_title = "Total energy consumption")
+A
+
+```
+</center>
+:::
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: energy intensity of production by sectors in difference
+#| results: asis
+
+data_in <- data_sec %>% filter(variable %in% variables_like(., "^CI_TOE_S[0-9]{3}$", view = FALSE)) %>%
+  left_join(data_sec %>% filter(variable %in% variables_like(., "^Y_S[0-9]{3}$", view = FALSE)),
+            by = join_by(year, sector, commodity, index_scen, scenario)) %>%
+  transmute(values = values.x/values.y,
+            values_ref = values_ref.x/values_ref.y,
+            scenario = scenario,
+            index_scen = index_scen,
+            variable = variable.x,
+            year = year,
+            sector = sector,
+            commodity = commodity)
+                                 
+                                               
+
+A <- line_plot(data_in, series = unique(data_in$variable),
+               labels = unique(data_in$sector),
+               plot_title = "Average energy intensity of production")
+A
+
+```
+</center>
+:::
+
+:::
+
+### Share
+::: columns 
+
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: energy consumption share by sectors (BAU)
+#| results: asis
+
+data_in <- data_sec %>% filter(variable %in% variables_like(., "^CI_TOE_S[0-9]{3}$", view = FALSE),
+                               scenario == "baseline") %>%
+  group_by(year) %>%
+  mutate(value = values/sum(values), label = sector) %>% ungroup
+
+A <- bar_plotly(data_in, 
+                unique(data_in$variable),
+                unique(data_in$sector),
+                plot_title = "Baseline scenario",
+                line = FALSE, unit = "%",
+                y_axis_title = "")
+A
+
+```
+</center>
+:::
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: energy consumption share by sectors (shock)
+#| results: asis
+
+data_in <- data_sec %>% filter(variable %in% variables_like(., "^CI_TOE_S[0-9]{3}$", view = FALSE),
+                               scenario == scenario_to_analyse) %>%
+  group_by(year) %>%
+  mutate(value = values/sum(values), label = commodity) %>% ungroup
+
+A <- bar_plotly(data_in, 
+                unique(data_in$variable),
+                unique(data_in$sector),
+                plot_title = paste0("Shock scenario: ", scenario_to_analyse),
+                line = FALSE, unit = "%",
+                y_axis_title = "")
+A
+
+```
+</center>
+:::
+:::
+
+::::
+::: {.footer}
+
+Scenario: **`r params$scenario_to_analyse %>% toupper()`**
+
+:::
+## Intra-sectors
+Here shows the energy consumption of every energy commodity for each ThreeME sector
+
+:::: {.panel-tabset}
+### `r filter(names_sectors, code == "S001")$name`
+::: columns 
+
+::: {.column width="33%"}
+
+<center>
+```{r}
+#| label: energy consumption for S001 in level (BAU)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig <- fig_group_sec("S001")
+
+data_fig[["A1.1"]]
+```
+</center>
+<center>
+```{r}
+#| label: energy consumption for S001 in level (shock)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A2.1"]]
+
+```
+</center>
+
+:::
+
+::: {.column width="34%"}
+
+<center>
+```{r}
+#| label: energy consumption share for S001 (BAU)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A1.2"]]
+
+
+```
+</center>
+<center>
+```{r}
+#| label: energy consumption share for S001 (shock)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A2.2"]]
+
+
+```
+</center>
+:::
+
+::: {.column width="33%"}
+<center>
+```{r}
+#| label: energy consumption by S001 in difference
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A1.3"]]
+
+
+```
+</center>
+
+<center>
+```{r}
+#| label: energy consumption price by S001 in difference
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A2.3"]]
+
+
+```
+</center>
+
+:::
+
+:::
+::: {.footer}
+
+Scenario: **`r params$scenario_to_analyse %>% toupper()`**
+
+:::
+
+
+### `r filter(names_sectors, code == "S002")$name`
+::: columns 
+
+::: {.column width="33%"}
+
+<center>
+```{r}
+#| label: energy consumption for S002 in level (BAU)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+
+data_fig <- fig_group_sec("S002")
+
+data_fig[["A1.1"]]
+
+```
+</center>
+
+<center>
+```{r}
+#| label: energy consumption for S002 in level (shock)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+#| 
+data_fig[["A2.1"]]
+
+
+```
+</center>
+:::
+
+::: {.column width="34%"}
+
+<center>
+```{r}
+#| label: energy consumption share for S002 (BAU)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A1.2"]]
+
+
+```
+</center>
+<center>
+```{r}
+#| label: energy consumption share for S002 (shock)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A2.2"]]
+
+```
+</center>
+:::
+
+::: {.column width="33%"}
+<center>
+```{r}
+#| label: energy consumption by S002 in difference
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A1.3"]]
+
+
+```
+</center>
+
+<center>
+```{r}
+#| label: energy consumption price by S002 in difference
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A2.3"]]
+
+
+```
+</center>
+
+:::
+
+:::
+::: {.footer}
+
+Scenario: **`r params$scenario_to_analyse %>% toupper()`**
+
+:::
+
+
+### `r filter(names_sectors, code == "S003")$name`
+::: columns 
+
+::: {.column width="33%"}
+
+<center>
+```{r}
+#| label: energy consumption for S003 in level (BAU)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+
+data_fig <- fig_group_sec("S003")
+
+data_fig[["A1.1"]]
+
+```
+</center>
+
+<center>
+```{r}
+#| label: energy consumption for S003 in level (shock)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+data_fig[["A2.1"]]
+
+
+```
+</center>
+:::
+
+::: {.column width="34%"}
+
+<center>
+```{r}
+#| label: energy consumption share for S003 (BAU)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A1.2"]]
+
+
+```
+</center>
+<center>
+```{r}
+#| label: energy consumption share for S003 (shock)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A2.2"]]
+
+```
+</center>
+:::
+
+::: {.column width="33%"}
+<center>
+```{r}
+#| label: energy consumption by S003 in difference
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A1.3"]]
+
+
+```
+</center>
+
+<center>
+```{r}
+#| label: energy consumption price by S003 in difference
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A2.3"]]
+
+
+```
+</center>
+
+:::
+
+:::
+::: {.footer}
+
+Scenario: **`r params$scenario_to_analyse %>% toupper()`**
+
+:::
+
+### `r filter(names_sectors, code == "S004")$name`
+::: columns 
+
+::: {.column width="33%"}
+
+<center>
+```{r}
+#| label: energy consumption for S004 in level (BAU)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig <- fig_group_sec("S004")
+
+data_fig[["A1.1"]]
+```
+</center>
+
+<center>
+```{r}
+#| label: energy consumption for S004 in level (shock)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+data_fig[["A2.1"]]
+
+```
+</center>
+:::
+
+::: {.column width="34%"}
+
+<center>
+```{r}
+#| label: energy consumption share for S004 (BAU)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A1.2"]]
+
+```
+</center>
+<center>
+```{r}
+#| label: energy consumption share for S004 (shock)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A2.2"]]
+
+```
+</center>
+:::
+
+::: {.column width="33%"}
+<center>
+```{r}
+#| label: energy consumption by S004 in difference
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+data_fig[["A1.3"]]
+```
+</center>
+
+<center>
+```{r}
+#| label: energy consumption price by S004 in difference
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A2.3"]]
+
+```
+</center>
+
+:::
+
+:::
+::: {.footer}
+
+Scenario: **`r params$scenario_to_analyse %>% toupper()`**
+
+:::
+
+### `r filter(names_sectors, code == "S005")$name`
+::: columns 
+
+::: {.column width="33%"}
+
+<center>
+```{r}
+#| label: energy consumption for S005 in level (BAU)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig <- fig_group_sec("S005")
+
+data_fig[["A1.1"]]
+
+```
+</center>
+
+<center>
+```{r}
+#| label: energy consumption for S005 in level (shock)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+data_fig[["A2.1"]]
+
+```
+</center>
+:::
+
+::: {.column width="34%"}
+
+<center>
+```{r}
+#| label: energy consumption share for S005 (BAU)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A1.2"]]
+```
+</center>
+<center>
+```{r}
+#| label: energy consumption share for S005 (shock)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A2.2"]]
+
+```
+</center>
+:::
+
+::: {.column width="33%"}
+<center>
+```{r}
+#| label: energy consumption by S005 in difference
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A1.3"]]
+
+```
+</center>
+
+<center>
+```{r}
+#| label: energy consumption price by S005 in difference
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A2.3"]]
+
+```
+</center>
+
+:::
+
+:::
+::: {.footer}
+
+Scenario: **`r params$scenario_to_analyse %>% toupper()`**
+
+:::
+
+### `r filter(names_sectors, code == "S006")$name`
+::: columns 
+
+::: {.column width="33%"}
+
+<center>
+```{r}
+#| label: energy consumption for S006 in level (BAU)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig <- fig_group_sec("S006")
+
+data_fig[["A1.1"]]
+
+```
+</center>
+
+<center>
+```{r}
+#| label: energy consumption for S006 in level (shock)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+data_fig[["A2.1"]]
+
+```
+</center>
+:::
+
+::: {.column width="34%"}
+
+<center>
+```{r}
+#| label: energy consumption share for S006 (BAU)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A1.2"]]
+
+```
+</center>
+<center>
+```{r}
+#| label: energy consumption share for S006 (shock)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A2.2"]]
+
+```
+</center>
+:::
+
+::: {.column width="33%"}
+<center>
+```{r}
+#| label: energy consumption by S006 in difference
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A1.3"]]
+
+```
+</center>
+
+<center>
+```{r}
+#| label: energy consumption price by S006 in difference
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A2.3"]]
+
+```
+</center>
+
+:::
+
+:::
+::: {.footer}
+
+Scenario: **`r params$scenario_to_analyse %>% toupper()`**
+
+:::
+
+
+### `r filter(names_sectors, code == "S007")$name`
+::: columns 
+
+::: {.column width="33%"}
+
+<center>
+```{r}
+#| label: energy consumption for S007 in level (BAU)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig <- fig_group_sec("S007")
+
+data_fig[["A1.1"]]
+```
+</center>
+
+<center>
+```{r}
+#| label: energy consumption for S007 in level (shock)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A2.1"]]
+
+```
+</center>
+:::
+
+::: {.column width="34%"}
+
+<center>
+```{r}
+#| label: energy consumption share for S007 (BAU)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A1.2"]]
+
+```
+</center>
+<center>
+```{r}
+#| label: energy consumption share for S007 (shock)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A2.2"]]
+
+```
+</center>
+:::
+
+::: {.column width="33%"}
+<center>
+```{r}
+#| label: energy consumption by S007 in difference
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A1.3"]]
+
+```
+</center>
+
+<center>
+```{r}
+#| label: energy consumption price by S007 in difference
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A2.3"]]
+
+```
+</center>
+
+:::
+
+:::
+::: {.footer}
+
+Scenario: **`r params$scenario_to_analyse %>% toupper()`**
+
+:::
+
+### `r filter(names_sectors, code == "S008")$name`
+::: columns 
+
+::: {.column width="33%"}
+
+<center>
+```{r}
+#| label: energy consumption for S008 in level (BAU)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig <- fig_group_sec("S008")
+
+data_fig[["A1.1"]]
+
+```
+</center>
+
+<center>
+```{r}
+#| label: energy consumption for S008 in level (shock)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+data_fig[["A2.1"]]
+
+```
+</center>
+:::
+
+::: {.column width="34%"}
+
+<center>
+```{r}
+#| label: energy consumption share for S008 (BAU)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A1.2"]]
+
+```
+</center>
+<center>
+```{r}
+#| label: energy consumption share for S008 (shock)
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A2.2"]]
+
+```
+</center>
+:::
+
+::: {.column width="33%"}
+<center>
+```{r}
+#| label: energy consumption by S008 in difference
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A1.3"]]
+
+```
+</center>
+
+<center>
+```{r}
+#| label: energy consumption price by S008 in difference
+#| results: asis
+#| fig-width: 5.0
+#| fig-height: 4.3
+
+data_fig[["A2.3"]]
+
+```
+</center>
+
+:::
+
+:::
+::: {.footer}
+
+Scenario: **`r params$scenario_to_analyse %>% toupper()`**
+
+:::
+::::
+
+## Household
+
+:::: {.panel-tabset}
+### Level
+::: columns 
+
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: energy consumption by hh in level (BAU)
+#| results: asis
+
+data_in <- data_full %>% filter(variable %in% c(paste0("CH_TOE_",bridge_commodities[["C007"]]%>%toupper),
+                                                paste0("CH_TOE_",bridge_commodities[["C008"]]%>%toupper)),
+                                scenario == "baseline") %>%
+  mutate(value = values,
+         label = commodity)
+
+A <- bar_plotly(data_in, 
+                unique(data_in$variable),
+                unique(data_in$label),
+                plot_title = "Baseline scenario",
+                line = FALSE, unit = "TOE",
+                y_axis_title = "")
+A
+
+```
+</center>
+:::
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: energy consumption by hh in level (shock)
+#| results: asis
+
+data_in <- data_full %>% filter(variable %in% c(paste0("CH_TOE_",bridge_commodities[["C007"]]%>%toupper),
+                                                paste0("CH_TOE_",bridge_commodities[["C008"]]%>%toupper)),
+                                scenario == scenario_to_analyse) %>%
+  mutate(value = values,
+         label = commodity)
+
+A <- bar_plotly(data_in, 
+                unique(data_in$variable),
+                unique(data_in$label),
+                plot_title = paste0("Shock scenario: ", scenario_to_analyse),
+                line = FALSE, unit = "TOE",
+                y_axis_title = "")
+A
+
+```
+</center>
+:::
+:::
+
+### Difference
+::: columns 
+
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: energy consumption by hh in difference
+#| results: asis
+
+data_in_ener <- data_full %>% filter(variable %in% c(paste0("CH_TOE_",bridge_commodities[["C007"]]%>%toupper),
+                                                paste0("CH_TOE_",bridge_commodities[["C008"]]%>%toupper)))
+
+A <- line_plot(data_in_ener, series = unique(data_in_ener$variable),
+               labels = unique(data_in_ener$commodity),
+               plot_title = "Energy consumption")
+A
+
+```
+</center>
+:::
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: energy consumption price by hh in difference
+#| results: asis
+
+data_in <- data_full %>% filter(variable %in% c(paste0("PCH_",bridge_commodities[["C007"]]%>%toupper),
+                                                paste0("PCH_",bridge_commodities[["C008"]]%>%toupper)),
+                                commodity %in% (data_in_ener%>%group_by(commodity,scenario)%>%filter(sum(values)!=0))$commodity)
+
+A <- line_plot(data_in, series = unique(data_in$variable),
+               labels = unique(data_in$commodity),
+               plot_title = "Price of energy commodities")
+A
+
+```
+</center>
+:::
+
+:::
+
+### Share
+::: columns 
+
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: energy consumption share by hh (BAU)
+#| results: asis
+
+data_in <- data_full %>% filter(variable %in% c(paste0("CH_TOE_",bridge_commodities[["C007"]]%>%toupper),
+                                                paste0("CH_TOE_",bridge_commodities[["C008"]]%>%toupper)),
+                                scenario == "baseline") %>%
+  group_by(year) %>%
+  mutate(value = values/sum(values), label = commodity) %>% ungroup
+
+A <- bar_plotly(data_in, 
+                unique(data_in$variable),
+                unique(data_in$commodity),
+                plot_title = "Baseline scenario",
+                line = FALSE, unit = "%",
+                y_axis_title = "")
+A
+
+```
+</center>
+:::
+::: {.column width="50%"}
+<center>
+```{r}
+#| label: energy consumption share by hh (shock)
+#| results: asis
+
+data_in <- data_full %>% filter(variable %in% c(paste0("CH_TOE_",bridge_commodities[["C007"]]%>%toupper),
+                                                paste0("CH_TOE_",bridge_commodities[["C008"]]%>%toupper)),
+                                scenario == scenario_to_analyse) %>%
+  group_by(year) %>%
+  mutate(value = values/sum(values), label = commodity) %>% ungroup
+
+A <- bar_plotly(data_in, 
+                unique(data_in$variable),
+                unique(data_in$commodity),
+                plot_title = paste0("Shock scenario: ", scenario_to_analyse),
+                line = FALSE, unit = "%",
+                y_axis_title = "")
+A
+
+```
+</center>
+:::
+:::
+
+::::
+::: {.footer}
+
+Scenario: **`r params$scenario_to_analyse %>% toupper()`**
+
+:::
+
+::: {.footer}
+
+Scenario: **`r params$scenario_to_analyse %>% toupper()`**
+
+:::
+

@@ -1,0 +1,199 @@
+---
+title: Cahier de variantes
+subtitle: Aspects techniques et méthodologiques
+authors:
+  - name: Frédéric Reynès
+    email: frederic.reynes@sciencespo.fr
+    affiliation: OFCE, Sciences Po Paris
+    affiliation-url: "http://www.ofce.fr"
+  - name: Anissa Saumtally
+    email: anissa.saumtally@sciencespo.fr
+    affiliation: OFCE, Sciences Po Paris
+    affiliation-url: "http://www.ofce.fr"
+  - name: Lucia Sequeira
+    email: lucia.sequeira@sciencespo.fr
+    affiliation: OFCE, Sciences Po Paris
+    affiliation-url: "http://www.ofce.fr"
+author-footer: ThreeME team
+institution: Observatoire Français des Conjonctures Économiques
+date: today
+lang: fr
+bibliography: pres_references.bib
+toc-depth: 1
+format: 
+  pres-revealjs: default
+  # slide-level niveau des slides à prendre en compte (2 par défaut)
+  # utiliser set_fontsize_reveal(chemin, 32) pour changer la taille des caractères
+---
+
+```{r, include=FALSE}
+library(knitr)
+library(tidyverse) 
+library(showtext) 
+library(ofce)
+
+opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.pos="H", 
+  out.extra="",
+  dev="ragg_png",
+  fig.showtext=TRUE,
+  cache=FALSE)
+
+showtext_opts(dpi=200)
+showtext_auto()
+```
+
+## Le cahier de variantes ThreeME
+
+- Un outil sous Quarto qui permet de traiter les outputs du modèle et de synthétiser les résultats macroéconomiques.
+- Développé à partir du cahier de variantes réalisé dans la version antérieure de ThreeME (ThreeME V2).
+<!-- - Dans un premier temps, un cahier de variantes non-modulable avait été réalisé dans le cadre du projet avec STATEC. -->
+- Utilisé dans le cadre des projets :
+    + Hacienda Mexique
+    + STATEC Luxembourg
+    + DGT France
+    
+[**Cahier de variantes ThreeMe**](standard_shocks_fr.html)
+
+[**Standard shocks ThreeMe**](standard_shocks_en.html)
+
+## Le cahier de variantes ThreeME
+    
+- Constitué de :
+    + tableaux macroéconomiques
+    + graphiques dynamiques
+    
+- Modularité sur différents plans :
+    + variantes choisies
+    + variables à analyser
+    + horizon temporel
+    + modèles à comparer
+    + langue
+    + couleurs
+
+- Version standard :
+    + 12 chocs calibrés au total
+    
+- Version comparative avec Mésange :
+    + 4 chocs principaux
+
+## Intégration dans le workflow ThreeME
+
+- Le cahier de variantes est utilisé en interne au sein de l'équipe ThreeME mais aussi par des autres institutions, en France comme à l'étranger.
+- Les interactions sont possibles grâce à GitHub {{< fa brands github size=0.5x >}} qui permet d'avoir un espace de travail commune avec un contrôle des versions assuré.
+
+```{mermaid}
+
+flowchart LR
+    A[ThreeME] --> B(data_full*)
+    B --> C(standard_shocks.qmd)
+    C --> D[table_macro]
+    C --> E[plotly_plot]
+    D --> F(rda files)
+    E --> F(rda files)
+    F --> G(publications)
+
+```
+
+*Les sorties de ThreeME sont condensés dans un dataframe en format long nommé data_full
+
+## Export des tableaux et des graphiques
+
+- Les tableaux et graphiques sont sauvegardés dans un fichier rda qui permet de les récupérer pour incorporation à des autres documents Quarto
+- Ils gardent leur format d'objet ggplot/flextable
+- Ils peuvent être modifiés une fois importés, si nécessaire.
+
+```{r}
+#| label: save-rda
+#| eval: false
+#| echo: true
+
+##Save rda file
+
+save(table_macro, file = file.path("results","output_banks","tables.rda"))
+
+```
+
+```{r}
+#| label: load-rda
+#| eval: false
+#| echo: true
+
+##Load rda file
+
+load(file = file.path("results","output_banks","tables.rda"))
+
+```
+
+## Fonctions
+
+- table_macro
+- table_reference
+- flextable_theme
+- confetti
+- table_macro_double
+- plotly_plot
+- trad*
+- label*
+
+*Fonctions déjà incorporés au package ermeeth
+
+## Calibration d'un choc
+
+Un choc peut être calibré de deux manières :
+
+- directement sur R
+- via l'import d'un fichier Excel contenant la calibration
+
+Dans les deux cas on passe par un script R. Les script R contenant la calibration sont nommés suivant le patron : 
+
++ **2_calib_shock_expg1.R** 
+    
+où *expg1* est le code qui sert à identifier le choc (choc d'un point de PIB sur les dépenses publiques).
+
+```{r}
+#| label: hola
+#| eval: false
+#| echo: true
+
+# Define the series necessary to calibrate the scenario  
+series <- c("DEXPG", "DSOC_BENF_VAL", "GDP") |> 
+  tolower()
+ 
+# Load the selected series for the range baseyear:lastyear
+selection <- calib_new_base  |> 
+  select(year,all_of(series))
+
+
+## Change in exogenous variables
+shock_ch <- mutate(selection,
+                   dexpg =   ifelse(year >= shockyear, dexpg + 1 * 0.01*gdp[which(year == shockyear)], dexpg)) |> 
+            select(-gdp) 
+
+```
+
+## Comparaison avec des autres modèles
+
+### Le cas de Mésange
+
+- Deux voies pour récupérer les données de sortie :
+    + Import d'un fichier csv (en variation au compte central)
+    + Directement à partir du modèle Mésange sous R (récupéré par Anissa {{< fa fal fa-smile size=0.5x >}})
+    
+- Quatre variantes sélectionnés
+    
+- Un deuxième séminaire aura lieu pour la présentation de l'analyse macroéconomique (travail en cours)
+
+[**Cahier de variantes comparatif**](standard_shocks_comparative.html)
+
+## Prochaines étapes
+
+- Rédaction de la note d'analyse du cahier de variantes avec la DGT
+- Programmer des autres variantes sur Mésange (R)
+- Tester d'autres modèles
+- Améliorations techniques sur les fonctions
+- Tests et incorporation dans le package ermeeth
+- Publication sur le site ThreeME (à venir)

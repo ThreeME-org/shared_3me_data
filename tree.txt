@@ -41,7 +41,6 @@ resources/quarto/qmd_templates/generic_models/basic_results.qmd
 resources/quarto/qmd_templates/generic_models/info.txt
 resources/quarto/qmd_templates/generic_not_models/info.txt
 resources/quarto/qmd_templates/generic_not_models/pres.qmd
-resources/quarto/qmd_templates/info.txt
 resources/quarto/qmd_templates/threeme_specific/annexes_energy_balance.qmd
 resources/quarto/qmd_templates/threeme_specific/annexes_macroeconomics.qmd
 resources/quarto/qmd_templates/threeme_specific/info.txt

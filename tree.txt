@@ -41,9 +41,7 @@ resources/src/R_stuff/side_functions/info.txt
 resources/src/R_stuff/structural_scripts/info.txt
 resources/src/mdl/generic_models/info.txt
 resources/src/mdl/threeme/info.txt
-resources/src/sector_commodities/aggregation_rules/aggregation_rules.xlsx
 resources/src/sector_commodities/aggregation_rules/aggregation_rules_LUX_c36_s37.csv
-resources/src/sector_commodities/aggregation_rules/aggregation_rules_LUX_c36_s37.xlsx
 resources/src/sector_commodities/aggregation_rules/info.txt
 resources/src/sector_commodities/bridges/bridge_c13_s13.R
 resources/src/sector_commodities/bridges/bridge_c17_s17.R
